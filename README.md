@@ -1,6 +1,6 @@
 # SHIN VPN
 
-کلاینت VPN اندروید با Flutter و هستهٔ Xray.
+کلاینت VPN اندروید با Flutter و هستهٔ Xray. نسخهٔ توسعه: 1.1.0.
 
 ## پیش‌نیازها
 
@@ -47,8 +47,8 @@ Workflow در `.github/workflows/android.yml` اجرا می‌شود:
 3. تغییرات را push کنید و tag بسازید:
 
 ```bash
-git tag v1.00.7
-git push origin v1.00.7
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 ## ساختار پروژه

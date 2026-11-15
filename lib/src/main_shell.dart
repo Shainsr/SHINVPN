@@ -69,7 +69,7 @@ class _MainShellState extends State<MainShell> {
   String fragmentLength = '10-20';
   String fragmentInterval = '10-20';
   bool enableAdBlock = false;
-  bool autoFailover = false;
+  bool connectionHealthMonitor = false;
   bool autoConnectOnBoot = false;
 
   Timer? _failoverTimer;
@@ -231,7 +231,7 @@ class _MainShellState extends State<MainShell> {
       await prefs.setString('fragmentLength', fragmentLength);
       await prefs.setString('fragmentInterval', fragmentInterval);
       await prefs.setBool('enableAdBlock', enableAdBlock);
-      await prefs.setBool('autoFailover', autoFailover);
+      await prefs.setBool('connectionHealthMonitor', connectionHealthMonitor);
       await prefs.setBool('auto_connect_on_boot', autoConnectOnBoot);
       await prefs.setString('selectedDns', selectedDns);
       await prefs.setString('pingMode', selectedPingMode.name);
@@ -315,7 +315,9 @@ class _MainShellState extends State<MainShell> {
         fragmentLength = prefs.getString('fragmentLength') ?? '10-20';
         fragmentInterval = prefs.getString('fragmentInterval') ?? '10-20';
         enableAdBlock = prefs.getBool('enableAdBlock') ?? false;
-        autoFailover = prefs.getBool('autoFailover') ?? false;
+        connectionHealthMonitor = prefs.getBool('connectionHealthMonitor') ??
+            prefs.getBool('autoFailover') ??
+            false;
         autoConnectOnBoot = prefs.getBool('auto_connect_on_boot') ?? false;
         selectedDns = prefs.getString('selectedDns') ?? '1.1.1.1';
         updateRepoUrl =
@@ -380,9 +382,9 @@ class _MainShellState extends State<MainShell> {
   void _startFailoverWatchdog() {
     _failoverTimer?.cancel();
     _failoverStrikes = 0;
-    if (!autoFailover) return;
+    if (!connectionHealthMonitor) return;
     _failoverTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
-      if (!mounted || !autoFailover || !isConnected || _isFailoverSwitching) {
+      if (!mounted || !connectionHealthMonitor || !isConnected || _isFailoverSwitching) {
         return;
       }
       if (_statusNotifier.value.downloadSpeed > 0) {
@@ -397,7 +399,7 @@ class _MainShellState extends State<MainShell> {
       _failoverStrikes++;
       if (_failoverStrikes >= 2) {
         _failoverStrikes = 0;
-        await _triggerFailover();
+        await _suggestManualServerSwitch();
       }
     });
   }
@@ -408,8 +410,8 @@ class _MainShellState extends State<MainShell> {
     _failoverStrikes = 0;
   }
 
-  Future<void> _triggerFailover() async {
-    if (_isFailoverSwitching || servers.length < 2) return;
+  Future<void> _suggestManualServerSwitch() async {
+    if (_isFailoverSwitching || servers.length < 2 || !mounted) return;
     final candidates = servers.where((s) => s.id != selectedServerId).toList();
     if (candidates.isEmpty) return;
 
@@ -425,11 +427,33 @@ class _MainShellState extends State<MainShell> {
     final nextServer = candidates.first;
     _isFailoverSwitching = true;
     try {
-      showSnack(
-          'قطعی سرور تشخیص داده شد؛ انتقال خودکار به «${nextServer.remark}»...');
-      setState(() => selectedServerId = nextServer.id);
-      await savePersistentData();
-      await reconnectIfNeeded();
+      // Manual-selection policy: monitoring may recommend a server, but it
+      // must never change the selected server or reconnect without consent.
+      final shouldSwitch = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('کیفیت اتصال کاهش یافته است'),
+          content: Text(
+            'اتصال سرور فعلی چند بار ناموفق بوده است. سرور «${nextServer.remark}» به‌عنوان جایگزین پیشنهاد می‌شود. می‌خواهید به آن منتقل شوید؟',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('فعلاً نه'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('تغییر سرور'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldSwitch == true && mounted) {
+        setState(() => selectedServerId = nextServer.id);
+        await savePersistentData();
+        await reconnectIfNeeded();
+      }
     } finally {
       _isFailoverSwitching = false;
     }
@@ -1064,34 +1088,49 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<int> _measureThroughTunnel() async {
-    // Keep the configured scheme (especially HTTPS) and reuse one HttpClient
-    // so the second request can reuse the established connection when possible.
-    final url = Uri.parse(pingTestUrl.trim());
+    final url = Uri.tryParse(pingTestUrl.trim());
+    if (url == null || (url.scheme != 'https' && url.scheme != 'http')) {
+      return -1;
+    }
+
     final timeout = Duration(seconds: pingProxyTimeoutSec);
     final client = HttpClient()
       ..connectionTimeout = timeout
-      ..idleTimeout = const Duration(seconds: 10);
-    var best = -1;
+      ..idleTimeout = const Duration(seconds: 10)
+      ..maxConnectionsPerHost = 1;
+    final samples = <int>[];
     try {
+      // Two sequential requests on one HttpClient. The second request can
+      // reuse the established keep-alive connection when the endpoint allows it.
       for (var attempt = 0; attempt < 2; attempt++) {
         try {
-          final sw = Stopwatch()..start();
-          final req = await client.getUrl(url).timeout(timeout);
-          final resp = await req.close().timeout(timeout);
-          sw.stop();
-          if (resp.statusCode == 204 || resp.statusCode == 200) {
-            final ms = sw.elapsedMilliseconds;
-            if (best < 0 || ms < best) best = ms;
+          final stopwatch = Stopwatch()..start();
+          final request = await client.getUrl(url).timeout(timeout);
+          request.persistentConnection = true;
+          request.headers.set(HttpHeaders.acceptHeader, '*/*');
+          final response = await request.close().timeout(timeout);
+          stopwatch.stop();
+          final elapsed = stopwatch.elapsedMilliseconds;
+          final validStatus = response.statusCode == HttpStatus.ok ||
+              response.statusCode == HttpStatus.noContent;
+          final keepAlive = response.persistentConnection;
+          await response.drain<void>();
+          if (validStatus) samples.add(elapsed);
+          if (attempt == 0 && !keepAlive) {
+            // The server explicitly closed the connection; the next sample
+            // would be a new connection and must not be labelled Keep-Alive.
+            break;
           }
-          await resp.drain<void>();
         } catch (_) {
-          // Keep the second attempt independent if the first one fails.
+          break;
         }
       }
     } finally {
       client.close(force: true);
     }
-    return best;
+
+    if (samples.length >= 2) return samples[1];
+    return samples.isEmpty ? -1 : samples.first;
   }
 
   Future<int> _measureViaProxy(ServerItem server) async {
@@ -1154,7 +1193,9 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
-  static const int kPingConcurrency = 8;
+  static const int kPingConcurrencyMin = 2;
+  static const int kPingConcurrencyMax = 8;
+  static const int kPingConcurrencyStart = 4;
 
   Future<void> testAllPings() async {
     if (isTestingAll || servers.isEmpty) return;
@@ -1173,18 +1214,35 @@ class _MainShellState extends State<MainShell> {
       pingTestsTotal = queue.length;
     });
 
-    var next = 0;
-    Future<void> worker() async {
-      while (mounted && next < queue.length) {
-        final server = queue[next++];
-        await pingSingleServer(server, mode: mode, save: false);
-        if (mounted) setState(() => pingTestsCompleted++);
-      }
-    }
-
+    var concurrency = min(kPingConcurrencyStart, queue.length);
+    var offset = 0;
     try {
-      final workers = min(kPingConcurrency, queue.length);
-      await Future.wait([for (var i = 0; i < workers; i++) worker()]);
+      while (mounted && offset < queue.length) {
+        final end = min(offset + concurrency, queue.length);
+        final batch = queue.sublist(offset, end);
+        await Future.wait([
+          for (final server in batch)
+            pingSingleServer(server, mode: mode, save: false),
+        ]);
+
+        final successful = batch
+            .where((server) => (server.pingFor(mode) ?? -1) > 0)
+            .length;
+        final successRatio = batch.isEmpty ? 0.0 : successful / batch.length;
+        offset = end;
+        if (mounted) {
+          setState(() => pingTestsCompleted = offset);
+        }
+
+        // Adapt concurrency using observed success rate. A high failure rate
+        // backs off; stable batches gradually increase parallelism.
+        if (successRatio >= 0.80 && concurrency < kPingConcurrencyMax) {
+          concurrency++;
+        } else if (successRatio <= 0.40 &&
+            concurrency > kPingConcurrencyMin) {
+          concurrency--;
+        }
+      }
     } finally {
       if (mounted) setState(() => isTestingAll = false);
       await savePersistentData();
@@ -3107,7 +3165,7 @@ class _MainShellState extends State<MainShell> {
     }
 
     await Future.wait([
-      for (var i = 0; i < min(kPingConcurrency, missing.length); i++) worker(),
+      for (var i = 0; i < min(kPingConcurrencyMax, missing.length); i++) worker(),
     ]);
     await savePersistentData();
   }
@@ -3167,21 +3225,30 @@ class _MainShellState extends State<MainShell> {
     final queue = isConnected
         ? list.where((s) => s.id == selectedServerId).toList()
         : List<ServerItem>.from(list);
-    if (queue.isEmpty) {
-      return;
-    }
-    setState(() => _testingGroups.add(id));
-    var next = 0;
-    Future<void> worker() async {
-      while (mounted && next < queue.length) {
-        final server = queue[next++];
-        await pingSingleServer(server, save: false);
-      }
-    }
+    if (queue.isEmpty) return;
 
+    setState(() => _testingGroups.add(id));
+    var concurrency = min(kPingConcurrencyStart, queue.length);
+    var offset = 0;
     try {
-      final workers = min(kPingConcurrency, queue.length);
-      await Future.wait([for (var i = 0; i < workers; i++) worker()]);
+      while (mounted && offset < queue.length) {
+        final end = min(offset + concurrency, queue.length);
+        final batch = queue.sublist(offset, end);
+        await Future.wait([
+          for (final server in batch) pingSingleServer(server, save: false),
+        ]);
+        final successful = batch
+            .where((server) => (server.pingFor(selectedPingMode) ?? -1) > 0)
+            .length;
+        final successRatio = batch.isEmpty ? 0.0 : successful / batch.length;
+        offset = end;
+        if (successRatio >= 0.80 && concurrency < kPingConcurrencyMax) {
+          concurrency++;
+        } else if (successRatio <= 0.40 &&
+            concurrency > kPingConcurrencyMin) {
+          concurrency--;
+        }
+      }
     } finally {
       if (mounted) setState(() => _testingGroups.remove(id));
       await savePersistentData();
@@ -3888,7 +3955,7 @@ class _MainShellState extends State<MainShell> {
       'enableMux': enableMux,
       'enableTlsFragment': enableTlsFragment,
       'enableAdBlock': enableAdBlock,
-      'autoFailover': autoFailover,
+      'autoFailover': connectionHealthMonitor,
       'enableIPv6': enableIPv6,
       'mtuSize': mtuSize,
     };
@@ -4005,12 +4072,12 @@ class _MainShellState extends State<MainShell> {
             _settingsSwitch(
               icon: Icons.swap_horiz_rounded,
               iconColor: const Color(0xFF0EA5E9),
-              title: 'تغییر خودکار سرور هنگام قطعی (Auto-Failover)',
+              title: 'پایش سلامت اتصال',
               subtitle:
-                  'انتقال خودکار به سریع‌ترین سرور بعدی در صورت از کار افتادن سرور',
-              value: autoFailover,
+                  'تشخیص افت کیفیت و پیشنهاد سرور جایگزین؛ تغییر سرور فقط با تأیید شما',
+              value: connectionHealthMonitor,
               onChanged: (v) {
-                _applySetting(() => autoFailover = v);
+                _applySetting(() => connectionHealthMonitor = v);
                 setLocal(() {});
                 if (v && isConnected) {
                   _startFailoverWatchdog();

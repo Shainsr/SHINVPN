@@ -25,3 +25,8 @@ android/app/release-key.jks
 .idea/
 .vscode/
 .DS_Store
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example

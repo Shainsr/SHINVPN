@@ -345,14 +345,14 @@ Future<void> vpnBackgroundMain() async {
 }
 
 const String kAppVersion =
-    String.fromEnvironment('APP_VERSION', defaultValue: '1.00.6');
+    String.fromEnvironment('APP_VERSION', defaultValue: '1.1.0');
 
 const String kUpdateRepo = 'Shainsr/happvpn';
 
 const List<String> kUserAgents = [
-  'SHIN/1.00.0 (Android; Xray/26.10.31)',
+  'SHIN/1.1.0 (Android; Xray/26.10.31)',
   'v2rayNG/1.9.12',
-  'SHIN/1.00.0 (Android)',
+  'SHIN/1.1.0 (Android)',
 ];
 
 const List<String> kDnsOptions = [
