@@ -1,0 +1,279 @@
+name: Build SHIN APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+          cache: false
+
+      - name: Customize App Name to SHIN & Generate White 'S' Icon
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-pil
+
+          cat << 'EOF' > android/app/src/main/res/values/strings.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">SHIN</string>
+              <string name="qs_tile_label">SHIN</string>
+              <string name="widget_description">SHIN Quick Connect Widget</string>
+              <string name="widget_name">SHIN Widget</string>
+          </resources>
+          EOF
+
+          python3 - << 'PYEOF'
+          import os
+          from PIL import Image, ImageDraw, ImageFont
+
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          for folder, size in sizes.items():
+              out_dir = f"android/app/src/main/res/{folder}"
+              os.makedirs(out_dir, exist_ok=True)
+              img = Image.new("RGBA", (size, size), (255, 255, 255, 255))
+              draw = ImageDraw.Draw(img)
+
+              font_size = int(size * 0.68)
+              font = None
+              for fpath in [
+                  "assets/fonts/Vazirmatn-Black.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+              ]:
+                  if os.path.exists(fpath):
+                      font = ImageFont.truetype(fpath, font_size)
+                      break
+              if font is None:
+                  font = ImageFont.load_default()
+
+              bbox = draw.textbbox((0, 0), "S", font=font)
+              w = bbox[2] - bbox[0]
+              h = bbox[3] - bbox[1]
+              x = (size - w) / 2 - bbox[0]
+              y = (size - h) / 2 - bbox[1]
+              draw.text((x, y), "S", fill=(11, 15, 25, 255), font=font)
+              img.save(f"{out_dir}/ic_launcher.png")
+          PYEOF
+
+      - name: Clean, Install & Patch Plugin Notification Crash/Close
+        run: |
+          flutter pub cache clean --force
+          flutter pub get
+
+          python3 - << 'PYEOF'
+          import os, glob, re
+
+          def extract_ctx(snippet):
+              matches = re.findall(
+                  r'PendingIntent\.get(?:Activity|Service|Broadcast)\s*\(\s*([^,]+),',
+                  snippet
+              )
+              return matches[-1].strip() if matches else None
+
+          def patch_add_action(text, is_kt):
+              idx = 0
+              while True:
+                  m = re.search(r'\.addAction\s*\(', text[idx:])
+                  if not m:
+                      break
+                  start = idx + m.start()
+                  open_paren = idx + m.end() - 1
+                  depth = 1
+                  pos = open_paren + 1
+                  while pos < len(text) and depth > 0:
+                      if text[pos] == '(':
+                          depth += 1
+                      elif text[pos] == ')':
+                          depth -= 1
+                      pos += 1
+                  if depth != 0:
+                      break
+                  inner = text[open_paren + 1 : pos - 1]
+                  parts = []
+                  p_depth = 0
+                  last = 0
+                  for i, ch in enumerate(inner):
+                      if ch in '([{':
+                          p_depth += 1
+                      elif ch in ')]}':
+                          p_depth -= 1
+                      elif ch == ',' and p_depth == 0:
+                          parts.append(inner[last:i])
+                          last = i + 1
+                  parts.append(inner[last:])
+                  if len(parts) == 3:
+                      ctx_expr = extract_ctx(parts[2]) or extract_ctx(text[:start]) or extract_ctx(text)
+                      if ctx_expr:
+                          if is_kt:
+                              pi = (
+                                  f'android.app.PendingIntent.getBroadcast({ctx_expr}, 9901, '
+                                  f'android.content.Intent("com.example.happ_vpn.ACTION_SAFE_DISCONNECT_VPN")'
+                                  f'.setPackage({ctx_expr}.packageName), '
+                                  f'android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)'
+                              )
+                          else:
+                              pi = (
+                                  f'android.app.PendingIntent.getBroadcast({ctx_expr}, 9901, '
+                                  f'new android.content.Intent("com.example.happ_vpn.ACTION_SAFE_DISCONNECT_VPN")'
+                                  f'.setPackage({ctx_expr}.getPackageName()), '
+                                  f'android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE)'
+                              )
+                          replacement = f'.addAction({parts[0]}, {parts[1]}, {pi})'
+                          text = text[:start] + replacement + text[pos:]
+                          idx = start + len(replacement)
+                          continue
+                  idx = pos
+              return text
+
+          cache_dir = os.path.expanduser("~/.pub-cache/hosted/pub.dev")
+          plugin_dirs = glob.glob(os.path.join(cache_dir, "flutter_v2ray_client*"))
+
+          for pdir in plugin_dirs:
+              for root, _, files in os.walk(pdir):
+                  for fname in files:
+                      if not (fname.endswith(".kt") or fname.endswith(".java")):
+                          continue
+                      fpath = os.path.join(root, fname)
+                      with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                          content = f.read()
+
+                      orig = content
+                      is_kt = fname.endswith(".kt")
+
+                      # ۱. جلوگیری از بسته شدن اکتیویتی هنگام قطع اتصال
+                      content = re.sub(r'finishAffinity\s*\(\s*\)\s*;?', '', content)
+                      content = content.replace("Intent.FLAG_ACTIVITY_CLEAR_TASK", "Intent.FLAG_ACTIVITY_SINGLE_TOP")
+                      content = content.replace("FLAG_ACTIVITY_CLEAR_TASK", "FLAG_ACTIVITY_SINGLE_TOP")
+
+                      # ۲. هدایت دکمه Disconnect نوتیفیکیشن به VpnActionReceiver بدون باز کردن برنامه
+                      content = patch_add_action(content, is_kt)
+
+                      # ۳. اطمینان از وجود FLAG_IMMUTABLE در سایر PendingIntentها
+                      if is_kt:
+                          content = re.sub(
+                              r'PendingIntent\.get(Activity|Service|Broadcast)\s*\(\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*(0|PendingIntent\.FLAG_UPDATE_CURRENT)\s*\)',
+                              r'PendingIntent.get\1(\2, \3, \4, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)',
+                              content
+                          )
+                      else:
+                          content = re.sub(
+                              r'PendingIntent\.get(Activity|Service|Broadcast)\s*\(\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*(0|PendingIntent\.FLAG_UPDATE_CURRENT)\s*\)',
+                              r'PendingIntent.get\1(\2, \3, \4, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)',
+                              content
+                          )
+
+                      if content != orig:
+                          print(f"Patched successfully: {fpath}")
+                          with open(fpath, "w", encoding="utf-8") as f:
+                              f.write(content)
+          PYEOF
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+              echo "::error::Release signing secrets are incomplete."
+              exit 1
+            fi
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release-key.jks
+            STORE_PASSWORD="$KEYSTORE_PASSWORD"
+            SIGN_KEY_PASSWORD="$KEY_PASSWORD"
+            SIGN_ALIAS="$KEY_ALIAS"
+          else
+            # Branch/PR builds use a temporary key; tagged releases always use the stable secret key.
+            keytool -genkeypair -v -keystore android/app/release-key.jks \
+              -storepass temporary-ci-password -keypass temporary-ci-password \
+              -alias shin-ci -keyalg RSA -keysize 2048 -validity 2 \
+              -dname "CN=SHIN CI,O=SHIN,C=US"
+            STORE_PASSWORD="temporary-ci-password"
+            SIGN_KEY_PASSWORD="temporary-ci-password"
+            SIGN_ALIAS="shin-ci"
+          fi
+          {
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyPassword=$SIGN_KEY_PASSWORD"
+            echo "keyAlias=$SIGN_ALIAS"
+            echo "storeFile=release-key.jks"
+          } > android/key.properties
+
+      - name: Resolve version from tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="$(grep '^version:' pubspec.yaml | sed 's/version: //; s/+.*//')"
+          fi
+          echo "name=$VER" >> "$GITHUB_OUTPUT"
+          echo "code=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+          echo "Version $VER, build code $((100 + GITHUB_RUN_NUMBER))"
+
+      - name: Build Split Release APKs (ONLY armeabi-v7a and arm64-v8a)
+        run: >
+          flutter build apk --release
+          --split-per-abi
+          --target-platform android-arm,android-arm64
+          --build-name=${{ steps.ver.outputs.name }}
+          --build-number=${{ steps.ver.outputs.code }}
+          --dart-define=APP_VERSION=${{ steps.ver.outputs.name }}
+
+      - name: Verify APK signatures
+        run: |
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          echo "Using $APKSIGNER"
+          for f in build/app/outputs/flutter-apk/*.apk; do
+            echo "== $f"
+            "$APKSIGNER" verify --verbose --print-certs "$f"
+          done
+
+      - name: Upload 7a and 8a APKs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SHIN-Release-APKs-v7a-v8a
+          path: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Publish GitHub Release (on tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          generate_release_notes: true
+          draft: true
