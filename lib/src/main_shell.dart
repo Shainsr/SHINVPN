@@ -340,6 +340,17 @@ class _MainShellState extends State<MainShell> {
         customDirectDomains = List<String>.from(
             prefs.getStringList('customDirectDomains') ?? const <String>[]);
         customRoutingName = prefs.getString('customRoutingName') ?? '';
+
+        // اگه اولین اجرا است و کاربر هنوز routing تنظیم نکرده، قوانین ایران رو لود کن
+        final builtinApplied = prefs.getBool('builtin_routing_applied') ?? false;
+        if (!builtinApplied && customDirectIps.isEmpty && customDirectDomains.isEmpty) {
+          final parsed = parseRoutingInput(kBuiltinIranRoutingLink);
+          if (parsed != null) {
+            customDirectIps = parsed.directIps;
+            customDirectDomains = parsed.directDomains;
+            customRoutingName = parsed.name;
+          }
+        }
         iranianAutoDone = prefs.getBool('iranianAutoDone') ?? false;
         pingTestUrl = prefs.getString('pingTestUrl') ?? kDefaultPingUrl;
         _countryGroups
@@ -351,6 +362,12 @@ class _MainShellState extends State<MainShell> {
           selectedServerId = servers.first.id;
         }
       });
+      // ذخیره flag که قوانین پیش‌فرض ایران اعمال شده (یک بار برای همیشه)
+      final builtinApplied = prefs.getBool('builtin_routing_applied') ?? false;
+      if (!builtinApplied) {
+        await prefs.setBool('builtin_routing_applied', true);
+        await savePersistentData();
+      }
     } catch (_) {}
   }
 
