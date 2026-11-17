@@ -300,6 +300,34 @@ class _MainShellState extends State<MainShell> {
         } catch (_) {}
       }
 
+      var nextCustomDirectIps = List<String>.from(
+          prefs.getStringList('customDirectIps') ?? const <String>[]);
+      var nextCustomDirectDomains = List<String>.from(
+          prefs.getStringList('customDirectDomains') ?? const <String>[]);
+      var nextCustomRoutingName = prefs.getString('customRoutingName') ?? '';
+
+      // مهاجرت یک‌باره: نسخه‌های قبلی geoip/geosite را حذف می‌کردند؛
+      // قوانین پیش‌فرض ایران را بدون حذف قوانین سفارشی کاربر دوباره ادغام کن.
+      final routingV2Migrated =
+          prefs.getBool('routing_parser_v2_migrated') ?? false;
+      if (!routingV2Migrated) {
+        final parsed = parseRoutingInput(kBuiltinIranRoutingLink);
+        if (parsed != null) {
+          nextCustomDirectIps = {
+            ...nextCustomDirectIps,
+            ...parsed.directIps,
+          }.toList();
+          nextCustomDirectDomains = {
+            ...nextCustomDirectDomains,
+            ...parsed.directDomains,
+          }.toList();
+          if (nextCustomRoutingName.isEmpty) {
+            nextCustomRoutingName = parsed.name;
+          }
+        }
+        await prefs.setBool('routing_parser_v2_migrated', true);
+      }
+
       if (!mounted) return;
       setState(() {
         hwid = savedHwid;
@@ -335,31 +363,9 @@ class _MainShellState extends State<MainShell> {
         bypassApps
           ..clear()
           ..addAll(prefs.getStringList('bypassApps') ?? const <String>[]);
-        customDirectIps = List<String>.from(
-            prefs.getStringList('customDirectIps') ?? const <String>[]);
-        customDirectDomains = List<String>.from(
-            prefs.getStringList('customDirectDomains') ?? const <String>[]);
-        customRoutingName = prefs.getString('customRoutingName') ?? '';
-
-        // مهاجرت یک‌باره: نسخه‌های قبلی geoip/geosite را حذف می‌کردند؛
-        // قوانین پیش‌فرض ایران را بدون حذف قوانین سفارشی کاربر دوباره ادغام کن.
-        final routingV2Migrated =
-            prefs.getBool('routing_parser_v2_migrated') ?? false;
-        if (!routingV2Migrated) {
-          final parsed = parseRoutingInput(kBuiltinIranRoutingLink);
-          if (parsed != null) {
-            customDirectIps = {
-              ...customDirectIps,
-              ...parsed.directIps,
-            }.toList();
-            customDirectDomains = {
-              ...customDirectDomains,
-              ...parsed.directDomains,
-            }.toList();
-            if (customRoutingName.isEmpty) customRoutingName = parsed.name;
-          }
-          await prefs.setBool('routing_parser_v2_migrated', true);
-        }
+        customDirectIps = nextCustomDirectIps;
+        customDirectDomains = nextCustomDirectDomains;
+        customRoutingName = nextCustomRoutingName;
         iranianAutoDone = prefs.getBool('iranianAutoDone') ?? false;
         pingTestUrl = prefs.getString('pingTestUrl') ?? kDefaultPingUrl;
         _countryGroups
@@ -4610,4 +4616,4 @@ class _PowerButton extends StatelessWidget {
     );
   }
 }
-
+```[span_0](start_span)[span_0](end_span)
