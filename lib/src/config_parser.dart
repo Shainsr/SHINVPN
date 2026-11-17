@@ -37,12 +37,21 @@ ParsedRoutingRuleset? parseRoutingInput(String rawInput) {
     jsonText = LinkParser.decodeBase64Loose(LinkParser.safeDecode(payload));
   } else if (text.startsWith('{')) {
     jsonText = text;
+  } else {
+    final decoded = LinkParser.decodeBase64Loose(text);
+    if (decoded != null && decoded.trim().startsWith('{')) {
+      jsonText = decoded;
+    }
   }
 
   void addIpCandidate(String raw) {
     final s = raw.trim().replaceAll(r'\/', '/');
     if (s.isEmpty) return;
-    if (s.toLowerCase().startsWith('geoip:')) return;
+    final lower = s.toLowerCase();
+    if (lower.startsWith('geoip:')) {
+      if (RegExp(r'^geoip:[a-z0-9_-]+$').hasMatch(lower)) ips.add(lower);
+      return;
+    }
     final slash = s.indexOf('/');
     final hostPart = slash > 0 ? s.substring(0, slash) : s;
     final prefixPart = slash > 0 ? int.tryParse(s.substring(slash + 1)) : null;
@@ -59,7 +68,12 @@ ParsedRoutingRuleset? parseRoutingInput(String rawInput) {
     final s = raw.trim();
     if (s.isEmpty) return;
     final lower = s.toLowerCase();
-    if (lower.startsWith('geosite:')) return;
+    if (lower.startsWith('geosite:')) {
+      if (RegExp(r'^geosite:[a-z0-9_.-]+$').hasMatch(lower)) {
+        domains.add(lower);
+      }
+      return;
+    }
     if (lower.startsWith('regexp:') ||
         lower.startsWith('domain:') ||
         lower.startsWith('full:') ||
@@ -80,7 +94,10 @@ ParsedRoutingRuleset? parseRoutingInput(String rawInput) {
             (decoded['Name'] ?? decoded['name'] ?? '').toString().trim();
         if (rawName.isNotEmpty) name = rawName;
 
-        for (final key in ['DirectIp', 'directIp', 'direct_ip', 'ip']) {
+        for (final key in [
+          'DirectIp', 'directIp', 'direct_ip', 'ip',
+          'DirectIP', 'directIps', 'direct_ips'
+        ]) {
           final list = decoded[key];
           if (list is List) {
             for (final item in list) {
@@ -94,6 +111,8 @@ ParsedRoutingRuleset? parseRoutingInput(String rawInput) {
           'direct_sites',
           'DirectDomain',
           'directDomain',
+          'directDomains',
+          'direct_domains',
           'domain',
         ]) {
           final list = decoded[key];

@@ -341,15 +341,24 @@ class _MainShellState extends State<MainShell> {
             prefs.getStringList('customDirectDomains') ?? const <String>[]);
         customRoutingName = prefs.getString('customRoutingName') ?? '';
 
-        // اگه اولین اجرا است و کاربر هنوز routing تنظیم نکرده، قوانین ایران رو لود کن
-        final builtinApplied = prefs.getBool('builtin_routing_applied') ?? false;
-        if (!builtinApplied && customDirectIps.isEmpty && customDirectDomains.isEmpty) {
+        // مهاجرت یک‌باره: نسخه‌های قبلی geoip/geosite را حذف می‌کردند؛
+        // قوانین پیش‌فرض ایران را بدون حذف قوانین سفارشی کاربر دوباره ادغام کن.
+        final routingV2Migrated =
+            prefs.getBool('routing_parser_v2_migrated') ?? false;
+        if (!routingV2Migrated) {
           final parsed = parseRoutingInput(kBuiltinIranRoutingLink);
           if (parsed != null) {
-            customDirectIps = parsed.directIps;
-            customDirectDomains = parsed.directDomains;
-            customRoutingName = parsed.name;
+            customDirectIps = {
+              ...customDirectIps,
+              ...parsed.directIps,
+            }.toList();
+            customDirectDomains = {
+              ...customDirectDomains,
+              ...parsed.directDomains,
+            }.toList();
+            if (customRoutingName.isEmpty) customRoutingName = parsed.name;
           }
+          await prefs.setBool('routing_parser_v2_migrated', true);
         }
         iranianAutoDone = prefs.getBool('iranianAutoDone') ?? false;
         pingTestUrl = prefs.getString('pingTestUrl') ?? kDefaultPingUrl;
@@ -905,8 +914,7 @@ class _MainShellState extends State<MainShell> {
       if (bypassIran) {
         final directDomains = <String>{
           'regexp:.*\\.ir\$',
-          ...customDirectDomains
-              .where((d) => !d.toLowerCase().startsWith('geosite:')),
+          ...customDirectDomains,
         };
         rules.add({
           'type': 'field',
@@ -922,8 +930,7 @@ class _MainShellState extends State<MainShell> {
           '37.98.0.0/16',
           '78.38.0.0/15',
           '79.127.0.0/16',
-          ...customDirectIps
-              .where((ip) => !ip.toLowerCase().startsWith('geoip:')),
+          ...customDirectIps,
         };
         rules.add({
           'type': 'field',
@@ -931,9 +938,7 @@ class _MainShellState extends State<MainShell> {
           'outboundTag': 'direct'
         });
       } else if (customDirectIps.isNotEmpty || customDirectDomains.isNotEmpty) {
-        final safeDomains = customDirectDomains
-            .where((d) => !d.toLowerCase().startsWith('geosite:'))
-            .toList();
+        final safeDomains = customDirectDomains.toList();
         if (safeDomains.isNotEmpty) {
           rules.add({
             'type': 'field',
@@ -941,9 +946,7 @@ class _MainShellState extends State<MainShell> {
             'outboundTag': 'direct'
           });
         }
-        final safeIps = customDirectIps
-            .where((ip) => !ip.toLowerCase().startsWith('geoip:'))
-            .toList();
+        final safeIps = customDirectIps.toList();
         if (safeIps.isNotEmpty) {
           rules.add({
             'type': 'field',
@@ -3437,6 +3440,30 @@ class _MainShellState extends State<MainShell> {
               ),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 10),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Connection time',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 3),
+                      ValueListenableBuilder<V2RayStatus>(
+                        valueListenable: _statusNotifier,
+                        builder: (context, st, _) => Text(
+                          st.duration,
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                            fontSize: 25,
+                            letterSpacing: 2,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Center(
                   child: _PowerButton(
                     connected: connected,
@@ -3447,12 +3474,21 @@ class _MainShellState extends State<MainShell> {
                 ),
                 const SizedBox(height: 12),
                 Center(
-                  child: Text(
-                    statusTitle,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: connected ? accent : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: connected
+                          ? const Color(0xFFDCFCE7)
+                          : Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: Text(
+                      statusTitle,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: connected ? const Color(0xFF15803D) : null,
+                      ),
                     ),
                   ),
                 ),
@@ -3542,6 +3578,31 @@ class _MainShellState extends State<MainShell> {
                     ),
                   )
                 else ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'CONFIGURATIONS',
+                            textDirection: TextDirection.ltr,
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'افزودن کانفیگ یا اشتراک',
+                          onPressed: _showAddChooser,
+                          icon: const Icon(Icons.add_circle_outline_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
                   _buildServerFilterBar(),
                   if (sections.isEmpty)
                     const Center(
