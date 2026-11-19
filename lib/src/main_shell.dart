@@ -6,8 +6,8 @@ class MainShell extends StatefulWidget {
 
   const MainShell({
     super.key,
-    required this.onThemeChanged,
-    required this.currentTheme,
+    required onThemeChanged,
+    required currentTheme,
   });
 
   @override
@@ -81,7 +81,7 @@ class _MainShellState extends State<MainShell> {
   bool _hideEverything = false;
 
   // آپشن ۲: صندوق پیام‌ها و اعلان‌ها
-  final List> _inboxMessages = [];
+  final List<Map<String, dynamic>> _inboxMessages = [];
   bool _hasUnreadMessages = false;
 
   // آپشن ۳: تست IP و لوکیشن واقعی
@@ -644,7 +644,26 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
-  else {
+
+  Future<void> _findFastest() async {
+    if (isFindingFastest) return;
+    if (mounted) setState(() => isFindingFastest = true);
+    try {
+      final ranked = servers
+          .where((s) => (s.pingFor(selectedPingMode) ?? -1) > 0)
+          .toList()
+        ..sort((a, b) =>
+            a.pingFor(selectedPingMode)!.compareTo(b.pingFor(selectedPingMode)!));
+      if (ranked.isEmpty) {
+        showSnack('ابتدا تست پینگ را برای سرورها اجرا کنید');
+        return;
+      }
+      final best = ranked.first;
+      if (best.id != selectedServerId) {
+        if (mounted) setState(() => selectedServerId = best.id);
+        await savePersistentData();
+        showSnack('سرور انتخاب شد: ${best.remark}');
+      } else {
         showSnack('انتخاب سرور: ${best.remark}');
       }
 
@@ -657,6 +676,125 @@ class _MainShellState extends State<MainShell> {
       if (mounted) setState(() => isFindingFastest = false);
     }
   }
+
+  // --- تایمر قطع خودکار ---
+  String _fmtDurationClock(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  void _startSleepTimer(Duration duration) {
+    _sleepTimer?.cancel();
+    _sleepRemaining = duration;
+    if (mounted) setState(() {});
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      _sleepRemaining -= const Duration(seconds: 1);
+      if (_sleepRemaining.inSeconds <= 0) {
+        t.cancel();
+        _sleepTimer = null;
+        _sleepRemaining = Duration.zero;
+        if (mounted) setState(() {});
+        if (isConnected || isConnecting) await _stopVpn();
+        _addInboxMessage('تایمر خواب', 'اتصال به‌صورت خودکار قطع شد.');
+      } else {
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  void _cancelSleepTimer({bool silent = false}) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepRemaining = Duration.zero;
+    if (mounted) setState(() {});
+    if (!silent) showSnack('تایمر قطع خودکار لغو شد');
+  }
+
+  void _showSleepTimerSheet() {
+    const options = <int>[15, 30, 60, 120];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _sheetHeader(
+                Icons.bedtime_rounded,
+                const Color(0xFF8B5CF6),
+                'تایمر قطع خودکار',
+                'اتصال بعد از زمان انتخابی قطع می‌شود',
+              ),
+              const SizedBox(height: 14),
+              for (final m in options)
+                ListTile(
+                  leading: const Icon(Icons.timer_rounded),
+                  title: Text('$m دقیقه'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _startSleepTimer(Duration(minutes: m));
+                    showSnack('قطع خودکار بعد از $m دقیقه');
+                  },
+                ),
+              if (hasSleepTimer)
+                ListTile(
+                  leading: const Icon(Icons.timer_off_rounded, color: Colors.red),
+                  title: const Text('لغو تایمر'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _cancelSleepTimer();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- پایش خودکار اتصال (Failover) ---
+  void _startFailoverWatchdog() {
+    _failoverTimer?.cancel();
+    _failoverStrikes = 0;
+    if (!connectionHealthMonitor) return;
+    _failoverTimer = Timer.periodic(const Duration(seconds: 45), (_) async {
+      if (!mounted || !isConnected || _isFailoverSwitching) return;
+      if (selectedServer == null) return;
+      final ms = await _measureThroughTunnel();
+      if (ms > 0) {
+        _failoverStrikes = 0;
+        return;
+      }
+      _failoverStrikes++;
+      if (_failoverStrikes < 3) return;
+      _failoverStrikes = 0;
+      _isFailoverSwitching = true;
+      try {
+        _addInboxMessage('اتصال ناپایدار', 'به سرور سالم‌تر تغییر می‌کنیم.');
+        await _findFastest();
+      } finally {
+        _isFailoverSwitching = false;
+      }
+    });
+  }
+
+  void _stopFailoverWatchdog() {
+    _failoverTimer?.cancel();
+    _failoverTimer = null;
+    _failoverStrikes = 0;
+    _isFailoverSwitching = false;
+  }
+
 
   int _removeFailedServers() {
     final before = servers.length;
@@ -3069,16 +3207,16 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                       }
                       if (sub != null && v == 'delete') {
                         setState(() {
-                          this.servers.removeWhere((s) => s.subId == sub.id);
+                          servers.removeWhere((s) => s.subId == sub.id);
                           subscriptions.removeWhere((s) => s.id == sub.id);
                           if (selectedGroupFilter == sub.id) {
                             selectedGroupFilter = 'ALL';
                           }
-                          if (!this
+                          if (!servers
                               .servers
                               .any((s) => s.id == selectedServerId)) {
-                            selectedServerId = this.servers.isNotEmpty
-                                ? this.servers.first.id
+                            selectedServerId = servers.isNotEmpty
+                                ? servers.first.id
                                 : '';
                           }
                         });
@@ -3086,12 +3224,12 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                       }
                       if (sub == null && v == 'delete_manual') {
                         setState(() {
-                          this.servers.removeWhere((s) => s.subId == 'manual');
-                          if (!this
+                          servers.removeWhere((s) => s.subId == 'manual');
+                          if (!servers
                               .servers
                               .any((s) => s.id == selectedServerId)) {
-                            selectedServerId = this.servers.isNotEmpty
-                                ? this.servers.first.id
+                            selectedServerId = servers.isNotEmpty
+                                ? servers.first.id
                                 : '';
                           }
                         });
@@ -4490,11 +4628,11 @@ class _PowerButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _PowerButton({
-    required this.connected,
-    required this.connecting,
-    required this.accent,
-    required this.isDark,
-    required this.onTap,
+    required connected,
+    required connecting,
+    required accent,
+    required isDark,
+    required onTap,
   });
 
   @override
@@ -4599,7 +4737,7 @@ class _SpeedGraphPainter extends CustomPainter {
   final List<double> dl;
   final List<double> ul;
 
-  _SpeedGraphPainter({required this.dl, required this.ul});
+  _SpeedGraphPainter({required dl, required ul});
 
   @override
   void paint(Canvas canvas, Size size) {
