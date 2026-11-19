@@ -7,6 +7,16 @@ class ShinVPNApp extends StatefulWidget {
   State<ShinVPNApp> createState() => _ShinVPNAppState();
 }
 
+/// سطح اندازه ظاهر: ۰ کوچک، ۱ متوسط (پیش‌فرض)، ۲ بزرگ
+final ValueNotifier<int> kUiSizeLevel = ValueNotifier<int>(1);
+const List<double> kUiScaleFactors = [0.68, 0.78, 0.88];
+
+Future<void> setUiSizeLevel(int level) async {
+  kUiSizeLevel.value = level.clamp(0, kUiScaleFactors.length - 1);
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt('ui_size_level', kUiSizeLevel.value);
+}
+
 class _ShinVPNAppState extends State<ShinVPNApp> {
   AppThemeModeSetting currentTheme = AppThemeModeSetting.system;
 
@@ -19,6 +29,8 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
   Future<void> loadSavedTheme() async {
     final prefs = await SharedPreferences.getInstance();
     final idx = prefs.getInt('saved_theme_mode_v2') ?? 0;
+    kUiSizeLevel.value =
+        (prefs.getInt('ui_size_level') ?? 1).clamp(0, kUiScaleFactors.length - 1);
     if (!mounted) return;
     setState(() {
       currentTheme = AppThemeModeSetting.values[
@@ -115,6 +127,28 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
       themeMode: _themeMode,
+      builder: (context, child) => ValueListenableBuilder<int>(
+        valueListenable: kUiSizeLevel,
+        builder: (context, level, _) {
+          final f = kUiScaleFactors[level];
+          if (f == 1.0 || child == null) return child ?? const SizedBox();
+          // کوچک‌کردن کل رابط: صفحه با اندازه بزرگ‌تر رندر و با ضریب f کوچک می‌شود
+          final mq = MediaQuery.of(context);
+          final size = mq.size;
+          return MediaQuery(
+            data: mq.copyWith(size: size / f),
+            child: Transform.scale(
+              scale: f,
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: size.width / f,
+                height: size.height / f,
+                child: child,
+              ),
+            ),
+          );
+        },
+      ),
       home: MainShell(onThemeChanged: setTheme, currentTheme: currentTheme),
     );
   }

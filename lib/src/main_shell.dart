@@ -29,7 +29,7 @@ class _MainShellState extends State<MainShell> {
   String searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   PingMode selectedPingMode = PingMode.real;
-  int pingProxyTimeoutSec = 5;
+  int pingProxyTimeoutSec = 3;
   bool pingBestOfTwo = false;
   bool pingBypassRouting = false;
   String pingTestUrl = kDefaultPingUrl;
@@ -381,7 +381,7 @@ class _MainShellState extends State<MainShell> {
           (mode) => mode.name == prefs.getString('pingMode'),
           orElse: () => PingMode.real,
         );
-        pingProxyTimeoutSec = prefs.getInt('pingProxyTimeoutSec') ?? 5;
+        pingProxyTimeoutSec = prefs.getInt('pingProxyTimeoutSec') ?? 3;
         pingBestOfTwo = prefs.getBool('pingBestOfTwo') ?? false;
         pingBypassRouting = prefs.getBool('pingBypassRouting') ?? false;
         enableIPv6 = prefs.getBool('enableIPv6') ?? false;
@@ -1391,7 +1391,7 @@ class _MainShellState extends State<MainShell> {
   static const int kPingConcurrencyMin = 2;
   static const int kPingConcurrencyMax = 8;
   static const int kPingConcurrencyStart = 4;
-  static const int kPingWorkers = 6;
+  static const int kPingWorkers = 8;
 
   Future<void> testAllPings() async {
     if (isTestingAll || servers.isEmpty) return;
@@ -4415,6 +4415,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               trailing: SegmentedButton<int>(
                 segments: const [
+                  ButtonSegment(value: 3, label: Text('3s')),
                   ButtonSegment(value: 5, label: Text('5s')),
                   ButtonSegment(value: 10, label: Text('10s')),
                   ButtonSegment(value: 15, label: Text('15s')),
@@ -4482,6 +4483,24 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               },
             ),
           ),
+          _sectionTitle('اندازه ظاهر برنامه'),
+          _settingsCard([
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('کوچک')),
+                  ButtonSegment(value: 1, label: Text('متوسط')),
+                  ButtonSegment(value: 2, label: Text('بزرگ')),
+                ],
+                selected: {kUiSizeLevel.value},
+                onSelectionChanged: (v) {
+                  setUiSizeLevel(v.first);
+                  _settingsRebuild?.call();
+                },
+              ),
+            ),
+          ]),
           _sectionTitle('مسیریابی هوشمند و ترافیک'),
           _settingsCard([
             _settingsTile(
