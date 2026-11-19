@@ -135,14 +135,20 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
           // کوچک‌کردن کل رابط: صفحه با اندازه بزرگ‌تر رندر و با ضریب f کوچک می‌شود
           final mq = MediaQuery.of(context);
           final size = mq.size;
+          final scaledSize = Size(size.width / f, size.height / f);
           return MediaQuery(
-            data: mq.copyWith(size: size / f),
-            child: Transform.scale(
-              scale: f,
+            data: mq.copyWith(size: scaledSize),
+            // OverflowBox اجازه می‌دهد فرزند بزرگ‌تر از صفحه چیده شود،
+            // سپس Transform آن را کوچک می‌کند تا کل صفحه پر شود
+            child: OverflowBox(
               alignment: Alignment.topLeft,
-              child: SizedBox(
-                width: size.width / f,
-                height: size.height / f,
+              minWidth: scaledSize.width,
+              maxWidth: scaledSize.width,
+              minHeight: scaledSize.height,
+              maxHeight: scaledSize.height,
+              child: Transform.scale(
+                scale: f,
+                alignment: Alignment.topLeft,
                 child: child,
               ),
             ),
