@@ -42,6 +42,21 @@ class _MainShellState extends State<MainShell> {
   bool isFindingFastest = false;
 
   bool isProxyOnly = false;
+
+  // --- قابلیت‌های پیشرفته ---
+  bool hideDeadServers = false;
+  int serverSortMode = 0; // 0 پیش‌فرض، 1 نام، 2 پینگ
+  bool scheduleEnabled = false;
+  int schedConnMin = 480; // 08:00
+  int schedDiscMin = 1380; // 23:00
+  int _lastConnDay = -1;
+  int _lastDiscDay = -1;
+  String settingsPin = '';
+  bool settingsUnlocked = false;
+  bool networkRuleEnabled = false;
+  final Set<String> _alertedSubs = <String>{};
+  Timer? _bgTimer;
+  StreamSubscription<List<ConnectivityResult>>? _netSub;
   final Set<String> _sortedGroups = <String>{};
   final Set<String> _testingGroups = <String>{};
   final Set<String> _countryGroups = <String>{};
@@ -113,6 +128,8 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     _failoverTimer?.cancel();
     _sleepTimer?.cancel();
+    _bgTimer?.cancel();
+    _netSub?.cancel();
     _searchController.dispose();
     _statusNotifier.dispose();
     super.dispose();
@@ -191,6 +208,7 @@ class _MainShellState extends State<MainShell> {
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
       _autoUpdateOldSubscriptions();
+      _startBgTick();
       unawaited(checkForAppUpdate(silent: true));
       unawaited(_setupBackgroundUpdates());
     });
@@ -304,6 +322,7 @@ class _MainShellState extends State<MainShell> {
   Future<void> loadPersistentData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      _loadExtraSettings(prefs);
 
       var savedHwid = prefs.getString('hwid') ?? '';
       if (savedHwid.isEmpty) {
@@ -1263,7 +1282,7 @@ class _MainShellState extends State<MainShell> {
       await flutterV2ray.startV2Ray(
         remark: target.remark,
         config: finalConfig,
-        proxyOnly: false,
+        proxyOnly: isProxyOnly,
         blockedApps: bypassApps.isEmpty ? null : bypassApps.toList(),
         bypassSubnets: null,
       );
@@ -1933,16 +1952,57 @@ Future<void> checkForXrayCoreUpdate() async {
     }
   }
 
+  List<SubscriptionItem> get _orderedSubscriptions => [
+        ...subscriptions.where((s) => s.pinned),
+        ...subscriptions.where((s) => !s.pinned),
+      ];
+
+  // آپدیت خودکار: هر اشتراک بر اساس بازه‌ی خودش
   Future<void> _autoUpdateOldSubscriptions() async {
     if (!autoUpdateSubs) return;
-    final cutoff = DateTime.now()
-        .subtract(const Duration(hours: 6))
-        .millisecondsSinceEpoch;
+    final now = DateTime.now().millisecondsSinceEpoch;
     for (final sub in List<SubscriptionItem>.from(subscriptions)) {
+      final cutoff = now - sub.updateIntervalHours * 3600 * 1000;
       if (sub.updatedAt <= cutoff) {
         await updateSubscription(sub, silent: true);
       }
     }
+  }
+
+  void _showIntervalSheet(SubscriptionItem sub) {
+    const options = <int>[1, 3, 6, 12, 24];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('زمان آپدیت خودکار اشتراک',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+              for (final h in options)
+                ListTile(
+                  title: Text('هر $h ساعت'),
+                  trailing: sub.updateIntervalHours == h
+                      ? const Icon(Icons.check_rounded)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() => sub.updateIntervalHours = h);
+                    savePersistentData();
+                    showSnack('آپدیت خودکار: هر $h ساعت');
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _applyRoutingText(String rawText) async {
@@ -2670,7 +2730,6 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF374151),
                         ),
                       ),
                     ],
@@ -2851,7 +2910,12 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
     _settingsRebuild?.call();
   }
 
-  void _openSettings() {
+  Future<void> _openSettings() async {
+    if (!await _ensureSettingsUnlocked()) return;
+    _openSettingsUnlocked();
+  }
+
+  void _openSettingsUnlocked() {
     Navigator.of(context)
         .push(MaterialPageRoute(
           builder: (_) => StatefulBuilder(
@@ -3005,6 +3069,15 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
       final fa = _isFav(a) ? 0 : 1;
       final fb = _isFav(b) ? 0 : 1;
       if (fa != fb) return fa.compareTo(fb);
+      if (serverSortMode == 1) {
+        final r = a.remark.toLowerCase().compareTo(b.remark.toLowerCase());
+        if (r != 0) return r;
+      } else if (serverSortMode == 2) {
+        final r = rank(a).compareTo(rank(b));
+        if (r != 0) return r;
+        return (a.pingFor(PingMode.real) ?? 0)
+            .compareTo(b.pingFor(PingMode.real) ?? 0);
+      }
       if (!sort) return 0;
       final r = rank(a).compareTo(rank(b));
       if (r != 0) return r;
@@ -3202,6 +3275,13 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         savePersistentData();
                         if (!byCountry) _ensureCountries(servers);
                       }
+                      if (sub != null && v == 'pin') {
+                        setState(() => sub.pinned = !sub.pinned);
+                        savePersistentData();
+                      }
+                      if (sub != null && v == 'interval') {
+                        _showIntervalSheet(sub);
+                      }
                       if (sub != null && v == 'qr') {
                         _showQrShareSheet(
                           'QR Code اشتراک',
@@ -3256,6 +3336,17 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                             : 'گروه‌بندی: بر اساس کشور'),
                       ),
                       if (sub != null) ...[
+                        PopupMenuItem<String>(
+                          value: 'pin',
+                          child: Text(sub.pinned
+                              ? 'برداشتن پین اشتراک'
+                              : 'پین کردن اشتراک بالای لیست'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'interval',
+                          child: Text(
+                              'زمان آپدیت خودکار (${sub.updateIntervalHours} ساعت)'),
+                        ),
                         const PopupMenuItem<String>(
                           value: 'qr',
                           child: Text('نمایش QR Code اشتراک'),
@@ -3539,6 +3630,14 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           s.countryCode.toUpperCase() != selectedCountryFilter) {
         return false;
       }
+      // سرورهای خراب فقط پنهان می‌شوند و هرگز حذف نمی‌شوند
+      final pingNow = s.pingFor(selectedPingMode);
+      if (hideDeadServers &&
+          pingNow != null &&
+          pingNow <= 0 &&
+          s.id != selectedServerId) {
+        return false;
+      }
       if (q.isNotEmpty &&
           !s.remark.toLowerCase().contains(q) &&
           !s.protocol.toLowerCase().contains(q) &&
@@ -3569,7 +3668,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           title: 'سرورهای دستی',
           servers: grouped['manual']!,
         ),
-      for (final sub in subscriptions)
+      for (final sub in _orderedSubscriptions)
         if (!isFiltering || (grouped[sub.id] ?? const <ServerItem>[]).isNotEmpty)
           _groupSection(
             id: sub.id,
@@ -3622,9 +3721,6 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        color: connected
-                            ? const Color(0xFF374151)
-                            : (_isDark ? Colors.white70 : Colors.black54),
                       ),
                     ),
                   ),
@@ -3754,8 +3850,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 const Text('سرور فعال',
                     style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF374151))),
+                        fontWeight: FontWeight.w600,)),
               ],
             ),
           ),
@@ -3764,8 +3859,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 textDirection: TextDirection.ltr,
                 style: const TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF374151))),
+                    fontWeight: FontWeight.w700,)),
         ],
       ),
     );
@@ -4153,7 +4247,226 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     );
   }
 
-  void _exportBackup() {
+  // ================= قابلیت‌های پیشرفته =================
+  void _loadExtraSettings(SharedPreferences prefs) {
+    hideDeadServers = prefs.getBool('x_hideDead') ?? false;
+    serverSortMode = prefs.getInt('x_sortMode') ?? 0;
+    scheduleEnabled = prefs.getBool('x_schedOn') ?? false;
+    schedConnMin = prefs.getInt('x_schedConn') ?? 480;
+    schedDiscMin = prefs.getInt('x_schedDisc') ?? 1380;
+    settingsPin = prefs.getString('x_pin') ?? '';
+    networkRuleEnabled = prefs.getBool('x_netRule') ?? false;
+  }
+
+  Future<void> _setExtra(String key, Object value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is String) {
+      await prefs.setString(key, value);
+    }
+  }
+
+  String _hm(int minutes) =>
+      '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
+      '${(minutes % 60).toString().padLeft(2, '0')}';
+
+  Future<void> _pickSchedTime(bool connect) async {
+    final cur = connect ? schedConnMin : schedDiscMin;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60),
+    );
+    if (t == null) return;
+    final mins = t.hour * 60 + t.minute;
+    _applySetting(() {
+      if (connect) {
+        schedConnMin = mins;
+      } else {
+        schedDiscMin = mins;
+      }
+    });
+    _setExtra(connect ? 'x_schedConn' : 'x_schedDisc', mins);
+  }
+
+  // هر ۳۰ ثانیه: زمان‌بندی و هشدار حجم اشتراک
+  void _startBgTick() {
+    _bgTimer?.cancel();
+    _bgTimer = Timer.periodic(const Duration(seconds: 30), (_) => _bgTick());
+    _startNetworkWatch();
+  }
+
+  Future<void> _bgTick() async {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final minutes = now.hour * 60 + now.minute;
+    final dayKey = now.year * 10000 + now.month * 100 + now.day;
+
+    if (scheduleEnabled) {
+      if (minutes >= schedConnMin && _lastConnDay != dayKey) {
+        _lastConnDay = dayKey;
+        if (!isConnected && !isConnecting && selectedServer != null) {
+          await toggleVpn();
+        }
+      }
+      if (minutes >= schedDiscMin && _lastDiscDay != dayKey) {
+        _lastDiscDay = dayKey;
+        if (isConnected || isConnecting) {
+          await toggleVpn();
+        }
+      }
+    }
+
+    for (final sub in subscriptions) {
+      if (sub.totalBytes <= 0) continue;
+      final ratio = sub.usedBytes / sub.totalBytes;
+      if (ratio >= 0.8) {
+        if (_alertedSubs.add(sub.id)) {
+          _addInboxMessage(
+            'حجم اشتراک رو به اتمام',
+            '${sub.name}: بیش از ۸۰٪ حجم مصرف شده است.',
+          );
+        }
+      } else {
+        _alertedSubs.remove(sub.id);
+      }
+    }
+  }
+
+  void _startNetworkWatch() {
+    _netSub?.cancel();
+    _netSub = Connectivity().onConnectivityChanged.listen((results) async {
+      if (!networkRuleEnabled || !mounted) return;
+      final onWifi = results.contains(ConnectivityResult.wifi);
+      final onMobile = results.contains(ConnectivityResult.mobile);
+      if (onWifi && (isConnected || isConnecting)) {
+        await toggleVpn();
+      } else if (!onWifi &&
+          onMobile &&
+          !isConnected &&
+          !isConnecting &&
+          selectedServer != null) {
+        await toggleVpn();
+      }
+    });
+  }
+
+  Future<void> _runSpeedTest() async {
+    showSnack('در حال تست سرعت...');
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final sw = Stopwatch()..start();
+      final req = await client
+          .getUrl(Uri.parse(
+              'https://speed.cloudflare.com/__down?bytes=3000000'))
+          .timeout(const Duration(seconds: 15));
+      final res = await req.close().timeout(const Duration(seconds: 15));
+      var bytes = 0;
+      await for (final chunk in res) {
+        bytes += chunk.length;
+      }
+      sw.stop();
+      final secs = sw.elapsedMilliseconds / 1000;
+      final mbps = secs <= 0 ? 0.0 : (bytes * 8 / 1000000) / secs;
+      _addInboxMessage(
+        'نتیجه تست سرعت',
+        '${mbps.toStringAsFixed(1)} Mbps — '
+            '${(bytes / 1000000).toStringAsFixed(1)} MB در '
+            '${secs.toStringAsFixed(1)} ثانیه',
+      );
+      showSnack('سرعت: ${mbps.toStringAsFixed(1)} Mbps');
+    } catch (e) {
+      showSnack('تست سرعت ناموفق بود');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<bool> _ensureSettingsUnlocked() async {
+    if (settingsPin.isEmpty || settingsUnlocked) return true;
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('رمز تنظیمات'),
+        content: TextField(
+          controller: ctrl,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(hintText: 'PIN'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text == settingsPin),
+            child: const Text('ورود'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      settingsUnlocked = true;
+      return true;
+    }
+    if (ok == false && ctrl.text.isNotEmpty) showSnack('رمز اشتباه است');
+    return false;
+  }
+
+  Future<void> _setSettingsPin() async {
+    if (!await _ensureSettingsUnlocked()) return;
+    final ctrl = TextEditingController(text: settingsPin);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('رمز قفل تنظیمات'),
+        content: TextField(
+          controller: ctrl,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          decoration:
+              const InputDecoration(hintText: 'خالی بگذار تا حذف شود'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('انصراف'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('ذخیره'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    _applySetting(() => settingsPin = result);
+    _setExtra('x_pin', result);
+    showSnack(result.isEmpty ? 'قفل تنظیمات حذف شد' : 'رمز تنظیمات ذخیره شد');
+  }
+
+  Future<void> _exportBackupFile() async {
+    try {
+      Directory? dir;
+      try {
+        dir = await getDownloadsDirectory();
+      } catch (_) {}
+      dir ??= await getApplicationDocumentsDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final file = File('${dir.path}/shin_backup_$stamp.json');
+      await file.writeAsString(jsonEncode(_backupData()));
+      showSnack('پشتیبان ذخیره شد: ${file.path}');
+    } catch (e) {
+      showSnack('ذخیره فایل ناموفق بود: $e');
+    }
+  }
+
+  Map<String, dynamic> _backupData() {
     final data = {
       'app': 'SHIN',
       'version': kAppVersion,
@@ -4172,7 +4485,11 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
       'enableIPv6': enableIPv6,
       'mtuSize': mtuSize,
     };
-    final jsonStr = jsonEncode(data);
+    return data;
+  }
+
+  void _exportBackup() {
+    final jsonStr = jsonEncode(_backupData());
     Clipboard.setData(ClipboardData(text: jsonStr));
     showSnack('پشتیبان کامل در کلیپ‌بورد کپی شد 📋');
   }
@@ -4483,6 +4800,117 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               },
             ),
           ),
+          _sectionTitle('قابلیت‌های پیشرفته'),
+          _settingsCard([
+            _settingsTile(
+              icon: Icons.visibility_off_rounded,
+              iconColor: const Color(0xFF6B7280),
+              title: 'پنهان کردن سرورهای خراب',
+              subtitle: 'سرورها حذف نمی‌شوند؛ فقط از لیست پنهان می‌شوند',
+              trailing: Switch(
+                value: hideDeadServers,
+                onChanged: (v) {
+                  _applySetting(() => hideDeadServers = v);
+                  _setExtra('x_hideDead', v);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('پیش‌فرض')),
+                  ButtonSegment(value: 1, label: Text('نام')),
+                  ButtonSegment(value: 2, label: Text('پینگ')),
+                ],
+                selected: {serverSortMode},
+                onSelectionChanged: (v) {
+                  _applySetting(() => serverSortMode = v.first);
+                  _setExtra('x_sortMode', v.first);
+                },
+              ),
+            ),
+            _settingsTile(
+              icon: Icons.schedule_rounded,
+              iconColor: const Color(0xFF6B7280),
+              title: 'اتصال و قطع زمان‌بندی‌شده',
+              subtitle: 'برنامه باید در حافظه باشد تا کار کند',
+              trailing: Switch(
+                value: scheduleEnabled,
+                onChanged: (v) {
+                  _applySetting(() => scheduleEnabled = v);
+                  _setExtra('x_schedOn', v);
+                },
+              ),
+            ),
+            if (scheduleEnabled) ...[
+              _settingsTile(
+                icon: Icons.login_rounded,
+                iconColor: const Color(0xFF6B7280),
+                title: 'ساعت اتصال',
+                trailing: Text(_hm(schedConnMin)),
+                onTap: () => _pickSchedTime(true),
+              ),
+              _settingsTile(
+                icon: Icons.logout_rounded,
+                iconColor: const Color(0xFF6B7280),
+                title: 'ساعت قطع',
+                trailing: Text(_hm(schedDiscMin)),
+                onTap: () => _pickSchedTime(false),
+              ),
+            ],
+            _settingsTile(
+              icon: Icons.wifi_tethering_rounded,
+              iconColor: const Color(0xFF6B7280),
+              title: 'قانون اتصال بر اساس شبکه',
+              subtitle: 'موبایل: اتصال خودکار | Wi-Fi: قطع خودکار',
+              trailing: Switch(
+                value: networkRuleEnabled,
+                onChanged: (v) {
+                  _applySetting(() => networkRuleEnabled = v);
+                  _setExtra('x_netRule', v);
+                  _startNetworkWatch();
+                },
+              ),
+            ),
+            _settingsTile(
+              icon: Icons.speed_rounded,
+              iconColor: const Color(0xFF6B7280),
+              title: 'تست سرعت',
+              subtitle: 'دانلود ۳ مگابایت؛ در حالت VPN از تونل رد می‌شود',
+              onTap: _runSpeedTest,
+            ),
+            _settingsTile(
+              icon: Icons.lock_outline_rounded,
+              iconColor: const Color(0xFF6B7280),
+              title: settingsPin.isEmpty
+                  ? 'قفل تنظیمات با رمز'
+                  : 'تغییر یا حذف رمز تنظیمات',
+              onTap: _setSettingsPin,
+            ),
+            _settingsTile(
+              icon: Icons.save_alt_rounded,
+              iconColor: const Color(0xFF6B7280),
+              title: 'ذخیره پشتیبان در فایل',
+              subtitle: 'فایل JSON در پوشه‌ی Download',
+              onTap: _exportBackupFile,
+            ),
+          ]),
+          _sectionTitle('حالت اتصال'),
+          _settingsCard([
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('VPN (کل دستگاه)')),
+                  ButtonSegment(value: true, label: Text('فقط پروکسی')),
+                ],
+                selected: {isProxyOnly},
+                onSelectionChanged: (v) =>
+                    _applySetting(() => isProxyOnly = v.first),
+              ),
+            ),
+          ]),
           _sectionTitle('اندازه ظاهر برنامه'),
           _settingsCard([
             Padding(

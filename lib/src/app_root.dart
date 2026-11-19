@@ -66,6 +66,14 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
       brightness: brightness,
       fontFamily: 'Vazirmatn',
       scaffoldBackgroundColor: bg,
+      // متن اصلی با رنگ کاملاً خنثی (سیاه/سفید) تا خاکستری کل برنامه نشود
+      textTheme: ThemeData(brightness: brightness, fontFamily: 'Vazirmatn')
+          .textTheme
+          .apply(
+            bodyColor: text,
+            displayColor: text,
+            fontFamily: 'Vazirmatn',
+          ),
       cardColor: card,
       dividerColor:
           isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE0E0E0),
