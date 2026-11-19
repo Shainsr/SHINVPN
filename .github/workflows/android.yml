@@ -172,7 +172,7 @@ jobs:
                       # ۱. جلوگیری از بسته شدن اکتیویتی هنگام قطع اتصال
                       content = re.sub(r'finishAffinity\s*\(\s*\)\s*;?', '', content)
                       content = content.replace("Intent.FLAG_ACTIVITY_CLEAR_TASK", "Intent.FLAG_ACTIVITY_SINGLE_TOP")
-                      content = content.replace("FLAG_ACTIVITY_CLEAR_TASK", "FLAG_ACTIVITY_SINGLE_TOP")
+                      content = content.replace("FLAG_ACTIVITY_CLEAR_TASK", "Intent.FLAG_ACTIVITY_SINGLE_TOP")
 
                       # ۲. هدایت دکمه Disconnect نوتیفیکیشن به VpnActionReceiver بدون باز کردن برنامه
                       content = patch_add_action(content, is_kt)
@@ -204,17 +204,17 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
-              echo "::error::Release signing secrets are incomplete."
-              exit 1
-            fi
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "Using stable release keystore from GitHub Secrets..."
             echo "$KEYSTORE_BASE64" | base64 -d > android/app/release-key.jks
             STORE_PASSWORD="$KEYSTORE_PASSWORD"
             SIGN_KEY_PASSWORD="$KEY_PASSWORD"
             SIGN_ALIAS="$KEY_ALIAS"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::Release signing secrets are incomplete."
+            exit 1
           else
-            # Branch/PR builds use a temporary key; tagged releases always use the stable secret key.
+            echo "::warning::Secrets not found; using temporary CI key."
             keytool -genkeypair -v -keystore android/app/release-key.jks \
               -storepass temporary-ci-password -keypass temporary-ci-password \
               -alias shin-ci -keyalg RSA -keysize 2048 -validity 2 \
