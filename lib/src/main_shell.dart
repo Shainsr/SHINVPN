@@ -544,12 +544,23 @@ class _MainShellState extends State<MainShell> {
   }
 
   // --- آپشن ۴: سرورهای برگزیده ---
+  // کلید پایدار علاقه‌مندی: با آپدیت اشتراک id سرور عوض می‌شود، اما rawUrl ثابت است
+  String _favKey(ServerItem s) =>
+      s.rawUrl.isNotEmpty ? s.rawUrl : '${s.subId}|${s.remark}';
+
+  bool _isFav(ServerItem s) =>
+      _favoriteServerIds.contains(_favKey(s)) ||
+      _favoriteServerIds.contains(s.id);
+
   void _toggleFavorite(ServerItem server) {
+    final key = _favKey(server);
+    final wasFav = _isFav(server);
     setState(() {
-      if (_favoriteServerIds.contains(server.id)) {
-        _favoriteServerIds.remove(server.id);
+      _favoriteServerIds.remove(server.id);
+      if (wasFav) {
+        _favoriteServerIds.remove(key);
       } else {
-        _favoriteServerIds.add(server.id);
+        _favoriteServerIds.add(key);
       }
     });
     savePersistentData();
@@ -1365,7 +1376,8 @@ class _MainShellState extends State<MainShell> {
     var result = -1;
     try {
       result = await _measureViaProxy(server);
-      if (result > 0) await _resolveServerCountry(server);
+      // در تست گروهی، کشور بعد از پایان تست و به‌صورت موازی گرفته می‌شود
+      if (result > 0 && save) await _resolveServerCountry(server);
     } catch (_) {
       result = -1;
     } finally {
@@ -1379,6 +1391,7 @@ class _MainShellState extends State<MainShell> {
   static const int kPingConcurrencyMin = 2;
   static const int kPingConcurrencyMax = 8;
   static const int kPingConcurrencyStart = 4;
+  static const int kPingWorkers = 6;
 
   Future<void> testAllPings() async {
     if (isTestingAll || servers.isEmpty) return;
@@ -1397,38 +1410,29 @@ class _MainShellState extends State<MainShell> {
       pingTestsTotal = queue.length;
     });
 
-    var concurrency = min(kPingConcurrencyStart, queue.length);
-    var offset = 0;
-    try {
-      while (mounted && offset < queue.length) {
-        final end = min(offset + concurrency, queue.length);
-        final batch = queue.sublist(offset, end);
-        await Future.wait([
-          for (final server in batch)
-            pingSingleServer(server, mode: mode, save: false),
-        ]);
-
-        final successful = batch
-            .where((server) => (server.pingFor(mode) ?? -1) > 0)
-            .length;
-        final successRatio = batch.isEmpty ? 0.0 : successful / batch.length;
-        offset = end;
-        if (mounted) {
-          setState(() => pingTestsCompleted = offset);
-        }
-
-        if (successRatio >= 0.80 && concurrency < kPingConcurrencyMax) {
-          concurrency++;
-        } else if (successRatio <= 0.40 &&
-            concurrency > kPingConcurrencyMin) {
-          concurrency--;
-        }
+    var next = 0;
+    Future<void> worker() async {
+      while (mounted && next < queue.length) {
+        final server = queue[next++];
+        await pingSingleServer(server, mode: mode, save: false);
+        if (mounted) setState(() => pingTestsCompleted++);
       }
+    }
+
+    try {
+      await Future.wait([
+        for (var i = 0; i < min(kPingWorkers, queue.length); i++) worker(),
+      ]);
+      // کشور سرورهای سالم بعد از تست، به‌صورت موازی مشخص می‌شود
+      final healthy =
+          queue.where((x) => (x.pingFor(mode) ?? -1) > 0).toList();
+      if (mounted && healthy.isNotEmpty) await _ensureCountries(healthy);
     } finally {
       if (mounted) setState(() => isTestingAll = false);
       await savePersistentData();
     }
   }
+
 Future<void> checkForXrayCoreUpdate() async {
     if (isCheckingUpdate) return;
     setState(() => isCheckingUpdate = true);
@@ -2994,8 +2998,12 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
     }
 
     copy.sort((a, b) {
-      final fa = _favoriteServerIds.contains(a.id) ? 0 : 1;
-      final fb = _favoriteServerIds.contains(b.id) ? 0 : 1;
+      // سرور متصل همیشه بالای همه
+      final ca = (isConnected && a.id == selectedServerId) ? 0 : 1;
+      final cb = (isConnected && b.id == selectedServerId) ? 0 : 1;
+      if (ca != cb) return ca.compareTo(cb);
+      final fa = _isFav(a) ? 0 : 1;
+      final fb = _isFav(b) ? 0 : 1;
       if (fa != fb) return fa.compareTo(fb);
       if (!sort) return 0;
       final r = rank(a).compareTo(rank(b));
@@ -3545,7 +3553,16 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
       grouped.putIfAbsent(server.subId, () => <ServerItem>[]).add(server);
     }
 
+    // سرورهای علاقه‌مندی همیشه بالای لیست می‌مانند
+    final favServers = filteredServers.where(_isFav).toList();
+
     final sections = <Widget>[
+      if (favServers.isNotEmpty)
+        _groupSection(
+          id: 'favorites',
+          title: '⭐ علاقه‌مندی‌ها',
+          servers: _orderServers(favServers),
+        ),
       if ((grouped['manual'] ?? const <ServerItem>[]).isNotEmpty)
         _groupSection(
           id: 'manual',
@@ -3603,7 +3620,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                     child: Text(
                       statusTitle,
                       style: TextStyle(
-                        fontSize: 13.5,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: connected
                             ? const Color(0xFF10B981)
@@ -3626,6 +3643,10 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                         ),
                       ),
                     ),
+                  if (connected && selectedServer != null) ...[
+                    const SizedBox(height: 14),
+                    _connectedServerCard(selectedServer!),
+                  ],
                   if (connected) ...[
                     const SizedBox(height: 12),
                     _liveStatsCard(),
@@ -3705,6 +3726,51 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     );
   }
 
+  Widget _connectedServerCard(ServerItem server) {
+    final ping = server.pingFor(PingMode.real);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Text(flagOf(server.countryCode), style: const TextStyle(fontSize: 26)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  server.remark,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                const Text('سرور فعال',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF10B981))),
+              ],
+            ),
+          ),
+          if (ping != null && ping > 0)
+            Text('$ping ms',
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981))),
+        ],
+      ),
+    );
+  }
+
   Color _pingTone(int? ping) {
     if (ping == null) return Colors.grey;
     if (ping <= 0) return const Color(0xFFFF5252);
@@ -3722,7 +3788,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
 
   Widget _serverTileBody(ServerItem server) {
     final isSelected = server.id == selectedServerId;
-    final isFav = _favoriteServerIds.contains(server.id);
+    final isFav = _isFav(server);
     final ping = server.pingFor(PingMode.real);
     final tone = _pingTone(ping);
     final selectedBg = _isDark
@@ -3760,7 +3826,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 17,
                         fontWeight:
                             isSelected ? FontWeight.w800 : FontWeight.w600,
                       ),
@@ -3769,7 +3835,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                     Text(
                       server.protocol.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 13,
                         color: _isDark ? Colors.white54 : Colors.black45,
                       ),
                     ),
@@ -3780,15 +3846,15 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 ping == null ? '' : (ping <= 0 ? 'خطا' : '$ping ms'),
                 textDirection: TextDirection.ltr,
                 style: TextStyle(
-                    fontSize: 11.5, fontWeight: FontWeight.w700, color: tone),
+                    fontSize: 15, fontWeight: FontWeight.w700, color: tone),
               ),
               IconButton(
                 padding: EdgeInsets.zero,
                 constraints:
-                    const BoxConstraints.tightFor(width: 32, height: 32),
+                    const BoxConstraints.tightFor(width: 44, height: 44),
                 icon: Icon(
                   isFav ? Icons.star_rounded : Icons.star_border_rounded,
-                  size: 19,
+                  size: 26,
                   color: isFav ? const Color(0xFFF59E0B) : Colors.grey,
                 ),
                 onPressed: () => _toggleFavorite(server),
