@@ -3764,7 +3764,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.dns_outlined,
-                                size: 48, color: const Color(0xFF9CA3AF).shade400),
+                                size: 48, color: const Color(0xFFBDBDBD)),
                             const SizedBox(height: 12),
                             const Text('هنوز سروری اضافه نشده است',
                                 style: TextStyle(
