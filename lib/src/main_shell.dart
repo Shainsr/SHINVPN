@@ -6,8 +6,8 @@ class MainShell extends StatefulWidget {
 
   const MainShell({
     super.key,
-    required onThemeChanged,
-    required currentTheme,
+    required this.onThemeChanged,
+    required this.currentTheme,
   });
 
   @override
@@ -3213,7 +3213,6 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                             selectedGroupFilter = 'ALL';
                           }
                           if (!servers
-                              .servers
                               .any((s) => s.id == selectedServerId)) {
                             selectedServerId = servers.isNotEmpty
                                 ? servers.first.id
@@ -3226,7 +3225,6 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         setState(() {
                           servers.removeWhere((s) => s.subId == 'manual');
                           if (!servers
-                              .servers
                               .any((s) => s.id == selectedServerId)) {
                             selectedServerId = servers.isNotEmpty
                                 ? servers.first.id
@@ -4628,11 +4626,11 @@ class _PowerButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _PowerButton({
-    required connected,
-    required connecting,
-    required accent,
-    required isDark,
-    required onTap,
+    required this.connected,
+    required this.connecting,
+    required this.accent,
+    required this.isDark,
+    required this.onTap,
   });
 
   @override
@@ -4737,7 +4735,7 @@ class _SpeedGraphPainter extends CustomPainter {
   final List<double> dl;
   final List<double> ul;
 
-  _SpeedGraphPainter({required dl, required ul});
+  _SpeedGraphPainter({required this.dl, required this.ul});
 
   @override
   void paint(Canvas canvas, Size size) {
