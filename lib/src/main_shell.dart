@@ -29,7 +29,8 @@ class _MainShellState extends State<MainShell> {
   String searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   PingMode selectedPingMode = PingMode.real;
-  int pingProxyTimeoutSec = 3;
+  int pingProxyTimeoutSec = 7;
+  bool pingHeadMode = false; // Happ: via Proxy GET (پیش‌فرض) یا HEAD
   bool pingBestOfTwo = false;
   bool pingBypassRouting = false;
   String pingTestUrl = kDefaultPingUrl;
@@ -48,6 +49,7 @@ class _MainShellState extends State<MainShell> {
   int serverSortMode = 0; // 0 پیش‌فرض، 1 نام، 2 پینگ
   String settingsPin = '';
   bool settingsUnlocked = false;
+  bool _pingCoreActive = false;
   final Set<String> _alertedSubs = <String>{};
   final Set<String> _sortedGroups = <String>{};
   final Set<String> _testingGroups = <String>{};
@@ -140,6 +142,7 @@ class _MainShellState extends State<MainShell> {
     });
     flutterV2ray = V2ray(
       onStatusChanged: (status) {
+        if (_pingCoreActive) return;
         _statusNotifier.value = status;
         _dlHistory.removeAt(0);
         _dlHistory.add(status.downloadSpeed.toDouble());
@@ -388,7 +391,11 @@ class _MainShellState extends State<MainShell> {
           (mode) => mode.name == prefs.getString('pingMode'),
           orElse: () => PingMode.real,
         );
-        pingProxyTimeoutSec = prefs.getInt('pingProxyTimeoutSec') ?? 3;
+        pingProxyTimeoutSec = const [5, 7, 10, 15]
+                .contains(prefs.getInt('pingProxyTimeoutSec'))
+            ? prefs.getInt('pingProxyTimeoutSec')!
+            : 7;
+        pingHeadMode = prefs.getBool('x_pingHead') ?? false;
         pingBestOfTwo = prefs.getBool('pingBestOfTwo') ?? false;
         pingBypassRouting = prefs.getBool('pingBypassRouting') ?? false;
         enableIPv6 = prefs.getBool('enableIPv6') ?? false;
@@ -1347,25 +1354,141 @@ class _MainShellState extends State<MainShell> {
         return -1;
       }
     }
-    final raw = server.fullJsonConfig;
-    final cfg = pingBypassRouting
-        ? buildCustomizedConfig(raw)
-        : buildLightweightPingConfig(raw);
-    final timeout = Duration(seconds: pingProxyTimeoutSec);
-    final attempts = pingBestOfTwo ? 2 : 1;
+    var out = -1;
+    await _realDelayBatch([server], (_, ms) => out = ms);
+    return out;
+  }
 
-    final samples = <int>[];
-    for (var i = 0; i < attempts; i++) {
-      try {
-        final ms = await flutterV2ray
-            .getServerDelay(config: cfg)
-            .timeout(timeout);
-        if (ms > 0) samples.add(ms);
-      } catch (_) {}
+  // ===== پینگ به سبک Happ (Via Proxy) =====
+  // یک هسته‌ی موقت با یک inbound HTTP و یک outbound برای هر سرور راه‌اندازی می‌شود،
+  // سپس همه‌ی سرورها هم‌زمان با یک درخواست HTTP واقعی تست می‌شوند.
+  Future<int> _httpDelayViaPort(Uri url, int port, Duration timeout) async {
+    final client = HttpClient()..connectionTimeout = timeout;
+    client.findProxy = (_) => 'PROXY 127.0.0.1:$port';
+    final sw = Stopwatch()..start();
+    try {
+      final req = await (pingHeadMode
+              ? client.openUrl('HEAD', url)
+              : client.getUrl(url))
+          .timeout(timeout);
+      req.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
+      final res = await req.close().timeout(timeout);
+      await res.drain<void>().timeout(timeout);
+      sw.stop();
+      if (res.statusCode >= 200 && res.statusCode < 400) {
+        return max(1, sw.elapsedMilliseconds);
+      }
+      return -1;
+    } catch (_) {
+      return -1;
+    } finally {
+      client.close(force: true);
     }
-    if (samples.isEmpty) return -1;
-    samples.sort();
-    return samples.first;
+  }
+
+  Future<void> _realDelayBatch(
+    List<ServerItem> list,
+    void Function(ServerItem server, int ms) onResult,
+  ) async {
+    // اگر تست دیگری در حال اجراست، صبر کن
+    var waited = 0;
+    while (_pingCoreActive && waited < 60) {
+      await Future.delayed(const Duration(milliseconds: 250));
+      waited++;
+    }
+    final portOf = <String, int>{};
+    final inbounds = <Map<String, dynamic>>[];
+    final outbounds = <Map<String, dynamic>>[];
+    final rules = <Map<String, dynamic>>[];
+    var port = 21000;
+    var index = 0;
+    for (final server in list) {
+      try {
+        final cfg = jsonDecode(buildLightweightPingConfig(server.fullJsonConfig));
+        final outs = cfg is Map ? cfg['outbounds'] : null;
+        if (outs is! List || outs.isEmpty || outs.first is! Map) {
+          onResult(server, -1);
+          continue;
+        }
+        final out = Map<String, dynamic>.from(outs.first as Map);
+        out['tag'] = 'o$index';
+        inbounds.add({
+          'tag': 'i$index',
+          'listen': '127.0.0.1',
+          'port': port,
+          'protocol': 'http',
+          'settings': <String, dynamic>{},
+        });
+        outbounds.add(out);
+        rules.add({
+          'type': 'field',
+          'inboundTag': ['i$index'],
+          'outboundTag': 'o$index',
+        });
+        portOf[server.id] = port;
+        port++;
+        index++;
+      } catch (_) {
+        onResult(server, -1);
+      }
+    }
+    if (portOf.isEmpty) return;
+
+    outbounds.add({'tag': 'direct', 'protocol': 'freedom', 'settings': {}});
+    final config = {
+      'log': {'loglevel': 'none'},
+      'inbounds': inbounds,
+      'outbounds': outbounds,
+      'routing': {'domainStrategy': 'AsIs', 'rules': rules},
+    };
+
+    final url = Uri.tryParse(pingTestUrl.trim());
+    final timeout = Duration(seconds: pingProxyTimeoutSec);
+    final targets = list.where((s) => portOf.containsKey(s.id)).toList();
+    _pingCoreActive = true;
+    var started = false;
+    try {
+      await flutterV2ray.startV2Ray(
+        remark: 'ping',
+        config: jsonEncode(config),
+        proxyOnly: true,
+        blockedApps: null,
+        bypassSubnets: null,
+      );
+      started = true;
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (url == null) {
+        for (final s in targets) {
+          onResult(s, -1);
+        }
+        return;
+      }
+      var next = 0;
+      Future<void> worker() async {
+        while (next < targets.length) {
+          final server = targets[next++];
+          final ms = await _httpDelayViaPort(url, portOf[server.id]!, timeout);
+          onResult(server, ms);
+        }
+      }
+
+      await Future.wait([
+        for (var i = 0; i < min(kPingHttpWorkers, targets.length); i++) worker(),
+      ]);
+    } catch (_) {
+      if (!started) {
+        for (final s in targets) {
+          onResult(s, -1);
+        }
+      }
+    } finally {
+      if (started) {
+        try {
+          await flutterV2ray.stopV2Ray();
+        } catch (_) {}
+      }
+      _pingCoreActive = false;
+    }
   }
 
   Future<void> pingSingleServer(
@@ -1398,6 +1521,8 @@ class _MainShellState extends State<MainShell> {
   static const int kPingConcurrencyMax = 8;
   static const int kPingConcurrencyStart = 4;
   static const int kPingWorkers = 8;
+  static const int kPingBatchSize = 40;
+  static const int kPingHttpWorkers = 32;
 
   Future<void> testAllPings() async {
     if (isTestingAll || servers.isEmpty) return;
@@ -1426,9 +1551,21 @@ class _MainShellState extends State<MainShell> {
     }
 
     try {
-      await Future.wait([
-        for (var i = 0; i < min(kPingWorkers, queue.length); i++) worker(),
-      ]);
+      if (!isConnected) {
+        final key = mode.name;
+        for (var i = 0; i < queue.length; i += kPingBatchSize) {
+          if (!mounted) break;
+          final chunk = queue.sublist(i, min(i + kPingBatchSize, queue.length));
+          await _realDelayBatch(chunk, (srv, ms) {
+            srv.pings[key] = ms;
+            if (mounted) setState(() => pingTestsCompleted++);
+          });
+        }
+      } else {
+        await Future.wait([
+          for (var i = 0; i < min(kPingWorkers, queue.length); i++) worker(),
+        ]);
+      }
       // کشور سرورهای سالم بعد از تست، به‌صورت موازی مشخص می‌شود
       final healthy =
           queue.where((x) => (x.pingFor(mode) ?? -1) > 0).toList();
@@ -4606,8 +4743,8 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               trailing: SegmentedButton<int>(
                 segments: const [
-                  ButtonSegment(value: 3, label: Text('3s')),
                   ButtonSegment(value: 5, label: Text('5s')),
+                  ButtonSegment(value: 7, label: Text('7s')),
                   ButtonSegment(value: 10, label: Text('10s')),
                   ButtonSegment(value: 15, label: Text('15s')),
                 ],
@@ -4701,6 +4838,20 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 onSelectionChanged: (v) {
                   _applySetting(() => serverSortMode = v.first);
                   _setExtra('x_sortMode', v.first);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Via Proxy GET')),
+                  ButtonSegment(value: true, label: Text('Via Proxy HEAD')),
+                ],
+                selected: {pingHeadMode},
+                onSelectionChanged: (v) {
+                  _applySetting(() => pingHeadMode = v.first);
+                  _setExtra('x_pingHead', v.first);
                 },
               ),
             ),
