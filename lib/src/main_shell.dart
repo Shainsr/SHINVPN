@@ -469,7 +469,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.mail_outline_rounded,
-                const Color(0xFF6366F1),
+                const Color(0xFF4B5563),
                 'صندوق پیام‌ها و اعلان‌ها',
                 'وضعیت آپدیت‌ها، اشتراک و هشدارها',
               ),
@@ -477,7 +477,7 @@ class _MainShellState extends State<MainShell> {
               if (availableVersion.isNotEmpty)
                 ListTile(
                   leading: const Icon(Icons.system_update_rounded,
-                      color: Color(0xFF3B82F6)),
+                      color: Color(0xFF6B7280)),
                   title: Text('نسخه جدید $availableVersion آماده نصب است'),
                   trailing: TextButton(
                     onPressed: () {
@@ -581,14 +581,14 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.cell_tower_rounded,
-                const Color(0xFF10B981),
+                const Color(0xFF374151),
                 'پروفایل آماده اپراتورها',
                 'تنظیم خودکار Fragment، MTU و DNS با یک لمس',
               ),
               const SizedBox(height: 14),
               ListTile(
                 leading: const Icon(Icons.sim_card_rounded,
-                    color: Color(0xFF0EA5E9)),
+                    color: Color(0xFF6B7280)),
                 title: const Text('همراه اول (MCI)'),
                 subtitle: const Text(
                     'Fragment: tlshello (10-20) • MTU: 1400 • DNS: 1.1.1.1'),
@@ -610,7 +610,7 @@ class _MainShellState extends State<MainShell> {
               ),
               ListTile(
                 leading: const Icon(Icons.sim_card_rounded,
-                    color: Color(0xFFF59E0B)),
+                    color: Color(0xFF6B7280)),
                 title: const Text('ایرانسل (Irancell)'),
                 subtitle: const Text(
                     'Fragment: قوی (1-3) • MTU: 1280 • DNS: 8.8.8.8'),
@@ -632,7 +632,7 @@ class _MainShellState extends State<MainShell> {
               ),
               ListTile(
                 leading:
-                    const Icon(Icons.wifi_rounded, color: Color(0xFF10B981)),
+                    const Icon(Icons.wifi_rounded, color: Color(0xFF374151)),
                 title: const Text('وای‌فای / مخابرات (Wi-Fi)'),
                 subtitle: const Text(
                     'Fragment: خاموش • MTU: 1500 • DNS: 1.1.1.1'),
@@ -742,7 +742,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.bedtime_rounded,
-                const Color(0xFF8B5CF6),
+                const Color(0xFF6B7280),
                 'تایمر قطع خودکار',
                 'اتصال بعد از زمان انتخابی قطع می‌شود',
               ),
@@ -759,7 +759,7 @@ class _MainShellState extends State<MainShell> {
                 ),
               if (hasSleepTimer)
                 ListTile(
-                  leading: const Icon(Icons.timer_off_rounded, color: Colors.red),
+                  leading: const Icon(Icons.timer_off_rounded, color: const Color(0xFF4B5563)),
                   title: const Text('لغو تایمر'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -854,7 +854,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.qr_code_2_rounded,
-                const Color(0xFF3B82F6),
+                const Color(0xFF6B7280),
                 title,
                 subtitle,
               ),
@@ -1456,7 +1456,7 @@ Future<void> checkForXrayCoreUpdate() async {
       if (!mounted) return;
       _infoSheet(
         icon: Icons.memory_rounded,
-        color: const Color(0xFF10B981),
+        color: const Color(0xFF374151),
         title: 'وضعیت هسته Xray',
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1561,7 +1561,7 @@ Future<void> checkForXrayCoreUpdate() async {
   void _showUpdateSheet() {
     _infoSheet(
       icon: Icons.system_update_rounded,
-      color: const Color(0xFF3B82F6),
+      color: const Color(0xFF6B7280),
       title: 'نسخهٔ جدید $availableVersion',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2068,7 +2068,7 @@ void _showCustomRoutingSheet() {
               children: [
                 _sheetHeader(
                   Icons.alt_route_rounded,
-                  const Color(0xFF10B981),
+                  const Color(0xFF374151),
                   'قوانین روتینگ سفارشی (بای‌پس مستقیم)',
                   customDirectIps.isEmpty && customDirectDomains.isEmpty
                       ? 'فعلاً قانونی وارد نشده است'
@@ -2108,7 +2108,7 @@ void _showCustomRoutingSheet() {
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
+                            foregroundColor: const Color(0xFF4B5563),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -2201,7 +2201,7 @@ void _showCustomRoutingSheet() {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _sheetHeader(Icons.fact_check_rounded, const Color(0xFF3B82F6),
+              _sheetHeader(Icons.fact_check_rounded, const Color(0xFF6B7280),
                   'گزارش پردازش', title),
               const SizedBox(height: 14),
               for (final l in lines)
@@ -2275,11 +2275,11 @@ void _showCustomRoutingSheet() {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF3B82F6).withOpacity(0.15),
+                        color: const Color(0xFF6B7280).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Icon(Icons.add_link_rounded,
-                          color: Color(0xFF3B82F6)),
+                          color: Color(0xFF6B7280)),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
@@ -2482,7 +2482,7 @@ void _showCustomRoutingSheet() {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _sheetHeader(Icons.data_object_rounded, const Color(0xFF8B5CF6),
+              _sheetHeader(Icons.data_object_rounded, const Color(0xFF6B7280),
                   'کانفیگ سرور', 'ویرایش JSON هستهٔ Xray'),
               const SizedBox(height: 14),
               TextField(
@@ -2635,11 +2635,11 @@ void _showCustomRoutingSheet() {
 bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   Color get _bgTop =>
-      _isDark ? const Color(0xFF0B1033) : const Color(0xFFF4F5F8);
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF4F5F8);
   Color get _bgBottom =>
-      _isDark ? const Color(0xFF151B4D) : const Color(0xFFE9ECF2);
+      _isDark ? const Color(0xFF1F2937) : const Color(0xFFE9ECF2);
   Color get _cardSurface =>
-      _isDark ? const Color(0xFF181E4B).withOpacity(0.88) : Colors.white;
+      _isDark ? const Color(0xFF1F2937).withOpacity(0.88) : Colors.white;
   Color get _cardBorder =>
       _isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE2E5EC);
 
@@ -2662,7 +2662,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                   Row(
                     children: [
                       const Icon(Icons.timer_outlined,
-                          size: 15, color: Color(0xFF10B981)),
+                          size: 15, color: Color(0xFF374151)),
                       const SizedBox(width: 6),
                       Text(
                         st.duration,
@@ -2670,7 +2670,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF10B981),
+                          color: Color(0xFF374151),
                         ),
                       ),
                     ],
@@ -2718,7 +2718,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                   Expanded(
                     child: _speedItem(
                       Icons.arrow_downward_rounded,
-                      const Color(0xFF22C55E),
+                      const Color(0xFF374151),
                       _fmtSpeed(st.downloadSpeed),
                       _fmtBytes(st.download),
                     ),
@@ -2731,7 +2731,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                   Expanded(
                     child: _speedItem(
                       Icons.arrow_upward_rounded,
-                      const Color(0xFFA855F7),
+                      const Color(0xFF6B7280),
                       _fmtSpeed(st.uploadSpeed),
                       _fmtBytes(st.upload),
                     ),
@@ -2958,7 +2958,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         width: 9,
                         height: 9,
                         decoration: const BoxDecoration(
-                          color: Color(0xFFEF4444),
+                          color: Color(0xFF4B5563),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -3015,7 +3015,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   }
 
   Widget _usageBar(double ratio, String text, ColorScheme scheme) {
-    final color = ratio > 0.9 ? Colors.redAccent : scheme.primary;
+    final color = ratio > 0.9 ? const Color(0xFF4B5563) : scheme.primary;
     return Container(
       height: 22,
       clipBehavior: Clip.antiAlias,
@@ -3523,7 +3523,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     final connecting =
         pending != null || isConnecting || _connState == 'DISCONNECTING';
     final accent =
-        connected ? const Color(0xFF10B981) : const Color(0xFF3B82F6);
+        connected ? const Color(0xFF374151) : const Color(0xFF6B7280);
     final statusTitle = pending == false
         ? 'در حال قطع...'
         : connected
@@ -3623,7 +3623,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: connected
-                            ? const Color(0xFF10B981)
+                            ? const Color(0xFF374151)
                             : (_isDark ? Colors.white70 : Colors.black54),
                       ),
                     ),
@@ -3634,7 +3634,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                         padding: const EdgeInsets.only(top: 6),
                         child: ActionChip(
                           avatar: const Icon(Icons.bedtime_rounded,
-                              size: 16, color: Color(0xFF8B5CF6)),
+                              size: 16, color: Color(0xFF6B7280)),
                           label: Text(
                             'قطع خودکار تا ${_fmtDurationClock(_sleepRemaining)}',
                             style: const TextStyle(fontSize: 12),
@@ -3733,7 +3733,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
       decoration: BoxDecoration(
         color: _cardSurface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+        border: Border.all(color: const Color(0xFF374151), width: 1.5),
       ),
       child: Row(
         children: [
@@ -3755,7 +3755,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF10B981))),
+                        color: Color(0xFF374151))),
               ],
             ),
           ),
@@ -3765,7 +3765,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF10B981))),
+                    color: Color(0xFF374151))),
         ],
       ),
     );
@@ -3773,10 +3773,10 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
 
   Color _pingTone(int? ping) {
     if (ping == null) return Colors.grey;
-    if (ping <= 0) return const Color(0xFFFF5252);
-    if (ping <= 200) return const Color(0xFF10B981);
-    if (ping <= 400) return const Color(0xFFF59E0B);
-    return const Color(0xFFFF5252);
+    if (ping <= 0) return const Color(0xFF4B5563);
+    if (ping <= 200) return const Color(0xFF374151);
+    if (ping <= 400) return const Color(0xFF6B7280);
+    return const Color(0xFF4B5563);
   }
 
   Widget _serverTile(ServerItem server) {
@@ -3793,8 +3793,8 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     final tone = _pingTone(ping);
     final selectedBg = _isDark
         ? Colors.white.withOpacity(0.08)
-        : const Color(0xFF4F46E5).withOpacity(0.07);
-    final indicatorColor = _isDark ? Colors.white : const Color(0xFF4F46E5);
+        : const Color(0xFF4B5563).withOpacity(0.07);
+    final indicatorColor = _isDark ? Colors.white : const Color(0xFF4B5563);
 
     return Material(
       color: isSelected ? selectedBg : Colors.transparent,
@@ -3855,7 +3855,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 icon: Icon(
                   isFav ? Icons.star_rounded : Icons.star_border_rounded,
                   size: 26,
-                  color: isFav ? const Color(0xFFF59E0B) : Colors.grey,
+                  color: isFav ? const Color(0xFF6B7280) : Colors.grey,
                 ),
                 onPressed: () => _toggleFavorite(server),
               ),
@@ -3935,9 +3935,9 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               ),
               ListTile(
                 leading:
-                    const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                    const Icon(Icons.delete_outline_rounded, color: const Color(0xFF4B5563)),
                 title:
-                    const Text('حذف سرور', style: TextStyle(color: Colors.red)),
+                    const Text('حذف سرور', style: TextStyle(color: const Color(0xFF4B5563))),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() {
@@ -3976,7 +3976,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _sheetHeader(Icons.link_rounded, const Color(0xFF3B82F6),
+              _sheetHeader(Icons.link_rounded, const Color(0xFF6B7280),
                   'آدرس تست پینگ'),
               const SizedBox(height: 14),
               TextField(
@@ -4234,7 +4234,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsSwitch(
               icon: Icons.auto_fix_high_rounded,
-              iconColor: const Color(0xFF10B981),
+              iconColor: const Color(0xFF374151),
               title: 'دور زدن محدودیت اپراتورها (TLS Fragment)',
               subtitle: 'تکه‌تکه کردن پکت‌های TLS برای همراه اول و ایرانسل',
               value: enableTlsFragment,
@@ -4250,11 +4250,11 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.12),
+                    color: const Color(0xFF374151).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.segment_rounded,
-                      color: Color(0xFF10B981), size: 20),
+                      color: Color(0xFF374151), size: 20),
                 ),
                 title: const Text('الگوی Fragment',
                     style:
@@ -4284,7 +4284,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               ),
             _settingsSwitch(
               icon: Icons.swap_horiz_rounded,
-              iconColor: const Color(0xFF0EA5E9),
+              iconColor: const Color(0xFF6B7280),
               title: 'پایش سلامت اتصال',
               subtitle:
                   'تشخیص افت کیفیت و پیشنهاد سرور جایگزین؛ تغییر سرور فقط با تأیید شما',
@@ -4304,7 +4304,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsSwitch(
               icon: Icons.alt_route_rounded,
-              iconColor: const Color(0xFF6366F1),
+              iconColor: const Color(0xFF4B5563),
               title: 'تجمیع اتصال (Mux)',
               subtitle:
                   'ارسال چند درخواست روی یک اتصال (برای Reality خاموش باشد)',
@@ -4316,7 +4316,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.shield_outlined,
-              iconColor: const Color(0xFFEF4444),
+              iconColor: const Color(0xFF4B5563),
               title: 'پذیرش TLS نامعتبر',
               subtitle: 'گواهی‌های ناامن یا خودامضا را بپذیر',
               value: allowInsecureDefault,
@@ -4327,7 +4327,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.language_rounded,
-              iconColor: const Color(0xFF06B6D4),
+              iconColor: const Color(0xFF6B7280),
               title: 'پشتیبانی از IPv6',
               subtitle: 'فقط در صورت پشتیبانی اپراتور یا اینترنت شما',
               value: enableIPv6,
@@ -4338,7 +4338,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.bolt_rounded,
-              iconColor: const Color(0xFFF59E0B),
+              iconColor: const Color(0xFF6B7280),
               title: 'بیدار نگه‌داشتن پردازنده (Keep CPU Awake)',
               subtitle: 'جلوگیری از قطع و فریز شدن VPN هنگام خاموشی صفحه',
               value: keepCpuAlive,
@@ -4351,11 +4351,11 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withOpacity(0.12),
+                  color: const Color(0xFF6B7280).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.tune_rounded,
-                    color: Color(0xFF8B5CF6), size: 20),
+                    color: Color(0xFF6B7280), size: 20),
               ),
               title: const Text('اندازه MTU پکت‌ها',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
@@ -4381,7 +4381,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsSwitch(
               icon: Icons.timeline_rounded,
-              iconColor: const Color(0xFF10B981),
+              iconColor: const Color(0xFF374151),
               title: 'اعمال مسیریابی روی پینگ',
               subtitle: 'قوانین بای‌پس ایران و LAN را در پینگ محاسبه کن',
               value: pingBypassRouting,
@@ -4392,7 +4392,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.filter_2_rounded,
-              iconColor: const Color(0xFF3B82F6),
+              iconColor: const Color(0xFF6B7280),
               title: 'بهترین از دو پینگ (Best of Two)',
               subtitle: 'دو پینگ مجزا ارسال و نتیجه سریع‌تر ثبت می‌شود',
               value: pingBestOfTwo,
@@ -4405,11 +4405,11 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEC4899).withOpacity(0.12),
+                  color: const Color(0xFF6B7280).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.timer_outlined,
-                    color: Color(0xFFEC4899), size: 20),
+                    color: Color(0xFF6B7280), size: 20),
               ),
               title: const Text('مهلت پینگ (Timeout)',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
@@ -4430,7 +4430,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.link_rounded,
-              iconColor: const Color(0xFF64748B),
+              iconColor: const Color(0xFF6B7280),
               title: 'آدرس تست تأخیر (Ping URL)',
               subtitle: pingTestUrl,
               trailing: const Icon(Icons.edit_rounded, size: 18),
@@ -4505,14 +4505,14 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.apps_rounded,
-              iconColor: const Color(0xFF3B82F6),
+              iconColor: const Color(0xFF6B7280),
               title: 'برنامه‌های خارج از VPN (Split Tunneling)',
               subtitle: '${bypassApps.length} برنامه مستقیم وصل می‌شوند',
               onTap: _openAppsPage,
             ),
             _settingsSwitch(
               icon: Icons.flag_circle_rounded,
-              iconColor: const Color(0xFF10B981),
+              iconColor: const Color(0xFF374151),
               title: 'بای‌پس ایران',
               subtitle: 'دامنه‌های .ir و رنج‌های روتینگ ایران مستقیم باز شوند',
               value: bypassIran,
@@ -4520,7 +4520,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.alt_route_rounded,
-              iconColor: const Color(0xFF0EA5E9),
+              iconColor: const Color(0xFF6B7280),
               title: 'قوانین روتینگ سفارشی (Happ / لیست IP)',
               subtitle: hasCustomRouting
                   ? '${customDirectIps.length} رنج IP • ${customDirectDomains.length} دامنه'
@@ -4529,7 +4529,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.block_rounded,
-              iconColor: const Color(0xFFEF4444),
+              iconColor: const Color(0xFF4B5563),
               title: 'مسدودساز تبلیغات و ردیاب‌ها (AdBlock)',
               subtitle:
                   'حذف تبلیغات درون‌برنامه‌ای و سایت‌ها با هسته Xray و AdGuard',
@@ -4542,7 +4542,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.power_settings_new_rounded,
-              iconColor: const Color(0xFF14B8A6),
+              iconColor: const Color(0xFF6B7280),
               title: 'اتصال خودکار پس از روشن شدن گوشی',
               subtitle: 'برقراری اتصال VPN بلافاصله بعد از ری‌استارت دستگاه',
               value: autoConnectOnBoot,
@@ -4550,7 +4550,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.router_rounded,
-              iconColor: const Color(0xFFF59E0B),
+              iconColor: const Color(0xFF6B7280),
               title: 'بای‌پس شبکهٔ محلی (LAN)',
               subtitle: 'ارتباط مستقیم با مودم و دستگاه‌های داخل خانه',
               value: bypassLan,
@@ -4594,21 +4594,21 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.tune_rounded,
-              iconColor: const Color(0xFF6366F1),
+              iconColor: const Color(0xFF4B5563),
               title: 'تنظیمات فوق پیشرفته موتور',
               subtitle: 'TLS Fragment، Auto-Failover، MTU و Mux',
               onTap: _openAdvancedSettings,
             ),
             _settingsTile(
               icon: Icons.file_upload_outlined,
-              iconColor: const Color(0xFF0EA5E9),
+              iconColor: const Color(0xFF6B7280),
               title: 'پشتیبان‌گیری از اطلاعات (Export)',
               subtitle: 'کپی کردن تمام سرورها و کانفیگ‌ها در کلیپ‌بورد',
               onTap: _exportBackup,
             ),
             _settingsTile(
               icon: Icons.file_download_outlined,
-              iconColor: const Color(0xFF10B981),
+              iconColor: const Color(0xFF374151),
               title: 'بازیابی اطلاعات (Import Backup)',
               subtitle: 'بازگردانی اطلاعات از متن کپی‌شده',
               onTap: _importBackup,
@@ -4618,7 +4618,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.system_update_rounded,
-              iconColor: const Color(0xFF3B82F6),
+              iconColor: const Color(0xFF6B7280),
               title: 'بررسی بروزرسانی برنامه',
               subtitle: 'نسخهٔ فعال: $kAppVersion',
               trailing: isCheckingUpdate
@@ -4632,7 +4632,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.memory_rounded,
-              iconColor: const Color(0xFF10B981),
+              iconColor: const Color(0xFF374151),
               title: 'هستهٔ پردازشی Xray',
               subtitle: coreVersion,
               trailing: const Icon(Icons.sync_rounded, size: 20),
@@ -4640,7 +4640,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.fingerprint_rounded,
-              iconColor: const Color(0xFF8B5CF6),
+              iconColor: const Color(0xFF6B7280),
               title: 'شناسه اختصاصی دستگاه (HWID)',
               subtitle: hwid,
               trailing: const Icon(Icons.copy_rounded, size: 18),
@@ -4654,7 +4654,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.delete_sweep_rounded,
-              iconColor: const Color(0xFFEF4444),
+              iconColor: const Color(0xFF4B5563),
               title: 'حذف همه سرورها و بازنشانی کامل',
               subtitle: 'حذف تمامی سرورها، اشتراک‌ها و ریست به حالت اول',
               onTap: () async {
@@ -4670,7 +4670,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                           child: const Text('انصراف')),
                       FilledButton(
                         style: FilledButton.styleFrom(
-                            backgroundColor: Colors.red),
+                            backgroundColor: const Color(0xFF4B5563)),
                         onPressed: () => Navigator.pop(ctx, true),
                         child: const Text('حذف همه'),
                       ),
@@ -4721,11 +4721,11 @@ class _PowerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final outerCircle =
-        isDark ? const Color(0xFF2E2C8A) : const Color(0xFFE0E7FF);
-    final innerCircle = isDark ? const Color(0xFF212066) : Colors.white;
+        isDark ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB);
+    final innerCircle = isDark ? const Color(0xFF1F2937) : Colors.white;
     final powerIconColor = connected
-        ? const Color(0xFF10B981)
-        : (isDark ? const Color(0xFF0D0F2E) : const Color(0xFF4338CA));
+        ? const Color(0xFF374151)
+        : (isDark ? const Color(0xFF111827) : const Color(0xFF1F2937));
 
     return GestureDetector(
       onTap: onTap,
@@ -4743,16 +4743,16 @@ class _PowerButton extends StatelessWidget {
                 gradient: SweepGradient(
                   colors: connected
                       ? const [
-                          Color(0xFF10B981),
-                          Color(0xFF34D399),
-                          Color(0xFF059669),
-                          Color(0xFF10B981)
+                          Color(0xFF374151),
+                          Color(0xFF6B7280),
+                          Color(0xFF374151),
+                          Color(0xFF374151)
                         ]
                       : const [
-                          Color(0xFF3B82F6),
-                          Color(0xFF8B5CF6),
-                          Color(0xFFEC4899),
-                          Color(0xFF3B82F6)
+                          Color(0xFF6B7280),
+                          Color(0xFF6B7280),
+                          Color(0xFF6B7280),
+                          Color(0xFF6B7280)
                         ],
                 ),
               ),
@@ -4762,7 +4762,7 @@ class _PowerButton extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: isDark
-                        ? const Color(0xFF111642)
+                        ? const Color(0xFF111827)
                         : const Color(0xFFF4F5F8),
                   ),
                 ),
@@ -4783,8 +4783,8 @@ class _PowerButton extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(
                     color: (connected
-                            ? const Color(0xFF10B981)
-                            : const Color(0xFF4F46E5))
+                            ? const Color(0xFF374151)
+                            : const Color(0xFF4B5563))
                         .withOpacity(isDark ? 0.35 : 0.15),
                     blurRadius: 28,
                     spreadRadius: 2,
@@ -4852,8 +4852,8 @@ class _SpeedGraphPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
 
-    drawSeries(dl, const Color(0xFF22C55E));
-    drawSeries(ul, const Color(0xFFA855F7));
+    drawSeries(dl, const Color(0xFF374151));
+    drawSeries(ul, const Color(0xFF6B7280));
   }
 
   @override

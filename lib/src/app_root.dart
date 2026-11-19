@@ -57,10 +57,10 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
 
   ThemeData _buildTheme(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0A0E17) : const Color(0xFFF3F6FB);
-    final card = isDark ? const Color(0xFF131926) : const Color(0xFFFFFFFF);
-    final text = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A);
-    const accent = Color(0xFF3B82F6);
+    final bg = isDark ? const Color(0xFF121212) : const Color(0xFFF2F2F2);
+    final card = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
+    final text = isDark ? const Color(0xFFF5F5F5) : const Color(0xFF111111);
+    final accent = isDark ? const Color(0xFFE5E5E5) : const Color(0xFF333333);
     final base = ThemeData(
       useMaterial3: true,
       brightness: brightness,
@@ -68,7 +68,7 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
       scaffoldBackgroundColor: bg,
       cardColor: card,
       dividerColor:
-          isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+          isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE0E0E0),
       colorScheme: isDark
           ? ColorScheme.dark(primary: accent, secondary: accent, surface: card)
           : ColorScheme.light(primary: accent, secondary: accent, surface: card),
@@ -92,13 +92,13 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE0E0E0),
           ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE0E0E0),
           ),
         ),
       ),

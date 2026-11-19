@@ -156,6 +156,8 @@ class SubscriptionItem {
   int totalBytes;
   int expireSec;
   String? lastError;
+  bool pinned;
+  int updateIntervalHours;
 
   SubscriptionItem({
     required this.id,
@@ -170,6 +172,8 @@ class SubscriptionItem {
     this.totalBytes = 0,
     this.expireSec = 0,
     this.lastError,
+    this.pinned = false,
+    this.updateIntervalHours = 6,
   });
 
   JsonMap toJson() => {
@@ -183,6 +187,8 @@ class SubscriptionItem {
         'usedBytes': usedBytes,
         'totalBytes': totalBytes,
         'expireSec': expireSec,
+        'pinned': pinned,
+        'updateIntervalHours': updateIntervalHours,
       };
 
   factory SubscriptionItem.fromJson(JsonMap json) => SubscriptionItem(
@@ -196,6 +202,8 @@ class SubscriptionItem {
         usedBytes: json['usedBytes'] ?? 0,
         totalBytes: json['totalBytes'] ?? 0,
         expireSec: json['expireSec'] ?? 0,
+        pinned: json['pinned'] ?? false,
+        updateIntervalHours: json['updateIntervalHours'] ?? 6,
       );
 }
 

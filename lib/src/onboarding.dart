@@ -44,7 +44,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final last = _index == _pages.length - 1;
-    const accent = Color(0xFF3B82F6);
+    const accent = Color(0xFF6B7280);
 
     return Directionality(
       textDirection: TextDirection.rtl,

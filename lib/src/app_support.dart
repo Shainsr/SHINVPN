@@ -292,7 +292,7 @@ Future<void> vpnBackgroundMain() async {
   final isConnected = prefs.getBool('bg_vpn_connected') ?? false;
   final config = prefs.getString('native_ready_config') ?? '';
   final remark = prefs.getString('native_ready_remark') ?? 'SHIN Server';
-  const isProxyOnly = false;
+  final isProxyOnly = prefs.getBool('isProxyOnly') ?? false;
 
   final v2ray = V2ray(
     onStatusChanged: (status) async {
