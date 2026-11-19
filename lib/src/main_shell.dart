@@ -3639,31 +3639,24 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
 
   Future<void> testGroupPings(String id, List<ServerItem> list) async {
     if (_testingGroups.contains(id)) return;
-    final queue = isConnected
-        ? list.where((s) => s.id == selectedServerId).toList()
-        : List<ServerItem>.from(list);
-    if (queue.isEmpty) return;
-
     setState(() => _testingGroups.add(id));
-    var concurrency = min(kPingConcurrencyStart, queue.length);
-    var offset = 0;
+    final mode = selectedPingMode;
+    final key = mode.name;
     try {
-      while (mounted && offset < queue.length) {
-        final end = min(offset + concurrency, queue.length);
-        final batch = queue.sublist(offset, end);
-        await Future.wait([
-          for (final server in batch) pingSingleServer(server, save: false),
-        ]);
-        final successful = batch
-            .where((server) => (server.pingFor(selectedPingMode) ?? -1) > 0)
-            .length;
-        final successRatio = batch.isEmpty ? 0.0 : successful / batch.length;
-        offset = end;
-        if (successRatio >= 0.80 && concurrency < kPingConcurrencyMax) {
-          concurrency++;
-        } else if (successRatio <= 0.40 &&
-            concurrency > kPingConcurrencyMin) {
-          concurrency--;
+      if (isConnected) {
+        // هنگام اتصال فقط سرور فعال قابل تست است (هسته‌ی VPN در حال استفاده است)
+        final active = list.where((s) => s.id == selectedServerId).toList();
+        for (final server in active) {
+          await pingSingleServer(server, mode: mode, save: false);
+        }
+      } else {
+        final queue = List<ServerItem>.from(list);
+        for (var i = 0; i < queue.length && mounted; i += kPingBatchSize) {
+          final chunk = queue.sublist(i, min(i + kPingBatchSize, queue.length));
+          await _realDelayBatch(chunk, (srv, ms) {
+            srv.pings[key] = ms;
+          });
+          if (mounted) setState(() {});
         }
       }
     } finally {
@@ -3693,6 +3686,12 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
         children: [
           Row(
             children: [
+              IconButton.filledTonal(
+                tooltip: 'تست پینگ همه‌ی سرورها',
+                icon: const Icon(Icons.speed_rounded, size: 20),
+                onPressed: isTestingAll ? null : () => testAllPings(),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: _searchController,
