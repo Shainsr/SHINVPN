@@ -30,6 +30,8 @@ class _MainShellState extends State<MainShell> {
   final TextEditingController _searchController = TextEditingController();
   PingMode selectedPingMode = PingMode.real;
   int pingProxyTimeoutSec = 7;
+  String routingPreset = 'none'; // none | iran | russia
+  List<dynamic> _presetRules = <dynamic>[];
   bool pingHeadMode = false; // Happ: via Proxy GET (پیش‌فرض) یا HEAD
   bool pingBestOfTwo = false;
   bool pingBypassRouting = false;
@@ -396,6 +398,8 @@ class _MainShellState extends State<MainShell> {
             ? prefs.getInt('pingProxyTimeoutSec')!
             : 7;
         pingHeadMode = prefs.getBool('x_pingHead') ?? false;
+        routingPreset = prefs.getString('x_routingPreset') ?? 'none';
+        unawaited(_loadPresetRules());
         pingBestOfTwo = prefs.getBool('pingBestOfTwo') ?? false;
         pingBypassRouting = prefs.getBool('pingBypassRouting') ?? false;
         enableIPv6 = prefs.getBool('enableIPv6') ?? false;
@@ -1147,6 +1151,8 @@ class _MainShellState extends State<MainShell> {
         }
       }
 
+      _appendPresetRules(rules, mainProxyTag);
+
       rules.add({
         'type': 'field',
         'network': 'tcp,udp',
@@ -1161,6 +1167,33 @@ class _MainShellState extends State<MainShell> {
       return jsonEncode(config);
     } catch (_) {
       return rawJson;
+    }
+  }
+
+  Future<void> _loadPresetRules() async {
+    if (routingPreset == 'none') {
+      _presetRules = <dynamic>[];
+      return;
+    }
+    try {
+      final text = await rootBundle
+          .loadString('assets/routing/custom_routing_white_$routingPreset.json');
+      final decoded = jsonDecode(text);
+      _presetRules = decoded is List ? decoded : <dynamic>[];
+    } catch (_) {
+      _presetRules = <dynamic>[];
+    }
+  }
+
+  // قوانین آماده‌ی v2rayNG (ایران/روسیه)؛ نیاز به فایل‌های geoip/geosite دارد
+  void _appendPresetRules(List<Map<String, dynamic>> rules, String proxyTag) {
+    for (final item in _presetRules) {
+      if (item is! Map) continue;
+      final rule = Map<String, dynamic>.from(item)..remove('remarks');
+      final tag = rule['outboundTag'];
+      if (tag == 'block') rule['outboundTag'] = 'blackhole';
+      if (tag == 'proxy') rule['outboundTag'] = proxyTag;
+      rules.add(rule);
     }
   }
 
@@ -1412,6 +1445,7 @@ class _MainShellState extends State<MainShell> {
         }
         final out = Map<String, dynamic>.from(outs.first as Map);
         out['tag'] = 'o$index';
+        out.remove('mux'); // مثل v2rayNG: تست بدون Mux
         inbounds.add({
           'tag': 'i$index',
           'listen': '127.0.0.1',
@@ -1436,7 +1470,7 @@ class _MainShellState extends State<MainShell> {
 
     outbounds.add({'tag': 'direct', 'protocol': 'freedom', 'settings': {}});
     final config = {
-      'log': {'loglevel': 'none'},
+      'log': {'loglevel': 'warning'},
       'inbounds': inbounds,
       'outbounds': outbounds,
       'routing': {'domainStrategy': 'AsIs', 'rules': rules},
@@ -1522,7 +1556,7 @@ class _MainShellState extends State<MainShell> {
   static const int kPingConcurrencyStart = 4;
   static const int kPingWorkers = 8;
   static const int kPingBatchSize = 40;
-  static const int kPingHttpWorkers = 32;
+  static const int kPingHttpWorkers = 16; // همان پیش‌فرض concurrency در v2rayNG
 
   Future<void> testAllPings() async {
     if (isTestingAll || servers.isEmpty) return;
@@ -4852,6 +4886,22 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 onSelectionChanged: (v) {
                   _applySetting(() => pingHeadMode = v.first);
                   _setExtra('x_pingHead', v.first);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'none', label: Text('بدون قانون آماده')),
+                  ButtonSegment(value: 'iran', label: Text('ایران')),
+                  ButtonSegment(value: 'russia', label: Text('روسیه')),
+                ],
+                selected: {routingPreset},
+                onSelectionChanged: (v) {
+                  _applySetting(() => routingPreset = v.first);
+                  _setExtra('x_routingPreset', v.first);
+                  unawaited(_loadPresetRules());
                 },
               ),
             ),
