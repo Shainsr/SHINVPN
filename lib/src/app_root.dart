@@ -7,6 +7,8 @@ class ShinVPNApp extends StatefulWidget {
   State<ShinVPNApp> createState() => _ShinVPNAppState();
 }
 
+const Color kAccent = Color(0xFF4F46E5);
+
 /// سطح اندازه ظاهر: ۰ کوچک، ۱ متوسط (پیش‌فرض)، ۲ بزرگ
 final ValueNotifier<int> kUiSizeLevel = ValueNotifier<int>(1);
 const List<double> kUiScaleFactors = [0.68, 0.78, 0.88];
@@ -60,7 +62,7 @@ class _ShinVPNAppState extends State<ShinVPNApp> {
     final bg = isDark ? const Color(0xFF121212) : const Color(0xFFF2F2F2);
     final card = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
     final text = isDark ? const Color(0xFFF5F5F5) : const Color(0xFF111111);
-    final accent = isDark ? const Color(0xFFE5E5E5) : const Color(0xFF333333);
+    final accent = isDark ? const Color(0xFF818CF8) : kAccent;
     final base = ThemeData(
       useMaterial3: true,
       brightness: brightness,

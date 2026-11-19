@@ -46,17 +46,9 @@ class _MainShellState extends State<MainShell> {
   // --- قابلیت‌های پیشرفته ---
   bool hideDeadServers = false;
   int serverSortMode = 0; // 0 پیش‌فرض، 1 نام، 2 پینگ
-  bool scheduleEnabled = false;
-  int schedConnMin = 480; // 08:00
-  int schedDiscMin = 1380; // 23:00
-  int _lastConnDay = -1;
-  int _lastDiscDay = -1;
   String settingsPin = '';
   bool settingsUnlocked = false;
-  bool networkRuleEnabled = false;
   final Set<String> _alertedSubs = <String>{};
-  Timer? _bgTimer;
-  StreamSubscription<List<ConnectivityResult>>? _netSub;
   final Set<String> _sortedGroups = <String>{};
   final Set<String> _testingGroups = <String>{};
   final Set<String> _countryGroups = <String>{};
@@ -70,7 +62,6 @@ class _MainShellState extends State<MainShell> {
   String _appsQuery = '';
   bool enableIPv6 = false;
   int mtuSize = 1500;
-  bool keepCpuAlive = true;
   final Set<String> _collapsedGroups = <String>{};
   bool bypassLan = true;
   bool bypassIran = true;
@@ -128,8 +119,6 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     _failoverTimer?.cancel();
     _sleepTimer?.cancel();
-    _bgTimer?.cancel();
-    _netSub?.cancel();
     _searchController.dispose();
     _statusNotifier.dispose();
     super.dispose();
@@ -208,7 +197,7 @@ class _MainShellState extends State<MainShell> {
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
       _autoUpdateOldSubscriptions();
-      _startBgTick();
+      _checkTrafficAlerts();
       unawaited(checkForAppUpdate(silent: true));
       unawaited(_setupBackgroundUpdates());
     });
@@ -288,7 +277,6 @@ class _MainShellState extends State<MainShell> {
       await prefs.setBool('pingBypassRouting', pingBypassRouting);
       await prefs.setBool('enableIPv6', enableIPv6);
       await prefs.setInt('mtuSize', mtuSize);
-      await prefs.setBool('keepCpuAlive', keepCpuAlive);
       await prefs.setStringList('bypassApps', bypassApps.toList());
       await prefs.setStringList('customDirectIps', customDirectIps);
       await prefs.setStringList('customDirectDomains', customDirectDomains);
@@ -405,7 +393,6 @@ class _MainShellState extends State<MainShell> {
         pingBypassRouting = prefs.getBool('pingBypassRouting') ?? false;
         enableIPv6 = prefs.getBool('enableIPv6') ?? false;
         mtuSize = prefs.getInt('mtuSize') ?? 1500;
-        keepCpuAlive = prefs.getBool('keepCpuAlive') ?? true;
         bypassApps
           ..clear()
           ..addAll(prefs.getStringList('bypassApps') ?? const <String>[]);
@@ -488,7 +475,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.mail_outline_rounded,
-                const Color(0xFF4B5563),
+                const Color(0xFF4F46E5),
                 'صندوق پیام‌ها و اعلان‌ها',
                 'وضعیت آپدیت‌ها، اشتراک و هشدارها',
               ),
@@ -496,7 +483,7 @@ class _MainShellState extends State<MainShell> {
               if (availableVersion.isNotEmpty)
                 ListTile(
                   leading: const Icon(Icons.system_update_rounded,
-                      color: Color(0xFF6B7280)),
+                      color: Color(0xFF4F46E5)),
                   title: Text('نسخه جدید $availableVersion آماده نصب است'),
                   trailing: TextButton(
                     onPressed: () {
@@ -512,7 +499,7 @@ class _MainShellState extends State<MainShell> {
                   child: Text(
                     'هیچ پیام جدیدی وجود ندارد.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(color: const Color(0xFF9CA3AF)),
                   ),
                 )
               else
@@ -532,7 +519,7 @@ class _MainShellState extends State<MainShell> {
                             style: const TextStyle(fontSize: 12)),
                         trailing: Text(m['time'] ?? '',
                             style: const TextStyle(
-                                fontSize: 11, color: Colors.grey)),
+                                fontSize: 11, color: const Color(0xFF9CA3AF))),
                       );
                     },
                   ),
@@ -600,14 +587,14 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.cell_tower_rounded,
-                const Color(0xFF374151),
+                const Color(0xFF4F46E5),
                 'پروفایل آماده اپراتورها',
                 'تنظیم خودکار Fragment، MTU و DNS با یک لمس',
               ),
               const SizedBox(height: 14),
               ListTile(
                 leading: const Icon(Icons.sim_card_rounded,
-                    color: Color(0xFF6B7280)),
+                    color: Color(0xFF4F46E5)),
                 title: const Text('همراه اول (MCI)'),
                 subtitle: const Text(
                     'Fragment: tlshello (10-20) • MTU: 1400 • DNS: 1.1.1.1'),
@@ -629,7 +616,7 @@ class _MainShellState extends State<MainShell> {
               ),
               ListTile(
                 leading: const Icon(Icons.sim_card_rounded,
-                    color: Color(0xFF6B7280)),
+                    color: Color(0xFF4F46E5)),
                 title: const Text('ایرانسل (Irancell)'),
                 subtitle: const Text(
                     'Fragment: قوی (1-3) • MTU: 1280 • DNS: 8.8.8.8'),
@@ -651,7 +638,7 @@ class _MainShellState extends State<MainShell> {
               ),
               ListTile(
                 leading:
-                    const Icon(Icons.wifi_rounded, color: Color(0xFF374151)),
+                    const Icon(Icons.wifi_rounded, color: Color(0xFF4F46E5)),
                 title: const Text('وای‌فای / مخابرات (Wi-Fi)'),
                 subtitle: const Text(
                     'Fragment: خاموش • MTU: 1500 • DNS: 1.1.1.1'),
@@ -761,7 +748,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.bedtime_rounded,
-                const Color(0xFF6B7280),
+                const Color(0xFF4F46E5),
                 'تایمر قطع خودکار',
                 'اتصال بعد از زمان انتخابی قطع می‌شود',
               ),
@@ -778,7 +765,7 @@ class _MainShellState extends State<MainShell> {
                 ),
               if (hasSleepTimer)
                 ListTile(
-                  leading: const Icon(Icons.timer_off_rounded, color: const Color(0xFF4B5563)),
+                  leading: const Icon(Icons.timer_off_rounded, color: const Color(0xFF4F46E5)),
                   title: const Text('لغو تایمر'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -797,7 +784,7 @@ class _MainShellState extends State<MainShell> {
     _failoverTimer?.cancel();
     _failoverStrikes = 0;
     if (!connectionHealthMonitor) return;
-    _failoverTimer = Timer.periodic(const Duration(seconds: 45), (_) async {
+    _failoverTimer = Timer.periodic(const Duration(seconds: 120), (_) async {
       if (!mounted || !isConnected || _isFailoverSwitching) return;
       if (selectedServer == null) return;
       final ms = await _measureThroughTunnel();
@@ -873,7 +860,7 @@ class _MainShellState extends State<MainShell> {
             children: [
               _sheetHeader(
                 Icons.qr_code_2_rounded,
-                const Color(0xFF6B7280),
+                const Color(0xFF4F46E5),
                 title,
                 subtitle,
               ),
@@ -1475,7 +1462,7 @@ Future<void> checkForXrayCoreUpdate() async {
       if (!mounted) return;
       _infoSheet(
         icon: Icons.memory_rounded,
-        color: const Color(0xFF374151),
+        color: const Color(0xFF4F46E5),
         title: 'وضعیت هسته Xray',
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1486,7 +1473,7 @@ Future<void> checkForXrayCoreUpdate() async {
             const SizedBox(height: 6),
             const Text(
               'هسته Xray به همراه کتابخانه کامپایل شده و آماده بهره‌برداری است.',
-              style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.6),
+              style: TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF), height: 1.6),
             ),
           ],
         ),
@@ -1580,7 +1567,7 @@ Future<void> checkForXrayCoreUpdate() async {
   void _showUpdateSheet() {
     _infoSheet(
       icon: Icons.system_update_rounded,
-      color: const Color(0xFF6B7280),
+      color: const Color(0xFF4F46E5),
       title: 'نسخهٔ جدید $availableVersion',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1967,6 +1954,7 @@ Future<void> checkForXrayCoreUpdate() async {
         await updateSubscription(sub, silent: true);
       }
     }
+    _checkTrafficAlerts();
   }
 
   void _showIntervalSheet(SubscriptionItem sub) {
@@ -2128,7 +2116,7 @@ void _showCustomRoutingSheet() {
               children: [
                 _sheetHeader(
                   Icons.alt_route_rounded,
-                  const Color(0xFF374151),
+                  const Color(0xFF4F46E5),
                   'قوانین روتینگ سفارشی (بای‌پس مستقیم)',
                   customDirectIps.isEmpty && customDirectDomains.isEmpty
                       ? 'فعلاً قانونی وارد نشده است'
@@ -2138,7 +2126,7 @@ void _showCustomRoutingSheet() {
                 const Text(
                   'متن happ://routing/add/... یا لیست CIDR آی‌پی‌ها و دامنه‌ها را اینجا بچسبانید تا بدون عبور از فیلترشکن و مستقیم باز شوند.',
                   style:
-                      TextStyle(fontSize: 12, color: Colors.grey, height: 1.6),
+                      TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF), height: 1.6),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -2168,7 +2156,7 @@ void _showCustomRoutingSheet() {
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF4B5563),
+                            foregroundColor: const Color(0xFF4F46E5),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -2261,7 +2249,7 @@ void _showCustomRoutingSheet() {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _sheetHeader(Icons.fact_check_rounded, const Color(0xFF6B7280),
+              _sheetHeader(Icons.fact_check_rounded, const Color(0xFF4F46E5),
                   'گزارش پردازش', title),
               const SizedBox(height: 14),
               for (final l in lines)
@@ -2273,7 +2261,7 @@ void _showCustomRoutingSheet() {
               if (r.rawPreview.isNotEmpty && r.added == 0) ...[
                 const SizedBox(height: 6),
                 const Text('پیش‌نمایش پاسخ دریافتی:',
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    style: TextStyle(color: const Color(0xFF9CA3AF), fontSize: 12)),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -2335,11 +2323,11 @@ void _showCustomRoutingSheet() {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF6B7280).withOpacity(0.15),
+                        color: const Color(0xFF4F46E5).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Icon(Icons.add_link_rounded,
-                          color: Color(0xFF6B7280)),
+                          color: Color(0xFF4F46E5)),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
@@ -2354,7 +2342,7 @@ void _showCustomRoutingSheet() {
                 const SizedBox(height: 8),
                 const Text(
                   'لینک vless، vmess، trojan، ss، socks، لینک اشتراک، JSON یا قوانین happ://routing/add/... را بچسبانید.',
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(color: const Color(0xFF9CA3AF), fontSize: 12),
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -2379,7 +2367,7 @@ void _showCustomRoutingSheet() {
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: EdgeInsets.zero,
                   title: const Text('تنظیمات بیشتر',
-                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      style: TextStyle(fontSize: 13, color: const Color(0xFF9CA3AF))),
                   children: [
                     TextField(
                       controller: nameCtrl,
@@ -2431,7 +2419,7 @@ void _showCustomRoutingSheet() {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Text(k, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text(k, style: const TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF))),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -2507,7 +2495,7 @@ void _showCustomRoutingSheet() {
                       fontSize: 16, fontWeight: FontWeight.w800)),
               if (subtitle != null)
                 Text(subtitle,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    style: const TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF))),
             ],
           ),
         ),
@@ -2542,7 +2530,7 @@ void _showCustomRoutingSheet() {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _sheetHeader(Icons.data_object_rounded, const Color(0xFF6B7280),
+              _sheetHeader(Icons.data_object_rounded, const Color(0xFF4F46E5),
                   'کانفیگ سرور', 'ویرایش JSON هستهٔ Xray'),
               const SizedBox(height: 14),
               TextField(
@@ -2687,7 +2675,7 @@ void _showCustomRoutingSheet() {
         Text(
           'کل: $totalText',
           textDirection: TextDirection.ltr,
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
+          style: const TextStyle(fontSize: 11, color: const Color(0xFF9CA3AF)),
         ),
       ],
     );
@@ -2695,11 +2683,11 @@ void _showCustomRoutingSheet() {
 bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   Color get _bgTop =>
-      _isDark ? const Color(0xFF1F2937) : const Color(0xFFF4F5F8);
+      _isDark ? const Color(0xFF3730A3) : const Color(0xFFF4F5F8);
   Color get _bgBottom =>
-      _isDark ? const Color(0xFF1F2937) : const Color(0xFFE9ECF2);
+      _isDark ? const Color(0xFF3730A3) : const Color(0xFFE9ECF2);
   Color get _cardSurface =>
-      _isDark ? const Color(0xFF1F2937).withOpacity(0.88) : Colors.white;
+      _isDark ? const Color(0xFF3730A3).withOpacity(0.88) : Colors.white;
   Color get _cardBorder =>
       _isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE2E5EC);
 
@@ -2722,7 +2710,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                   Row(
                     children: [
                       const Icon(Icons.timer_outlined,
-                          size: 15, color: Color(0xFF374151)),
+                          size: 15, color: Color(0xFF4F46E5)),
                       const SizedBox(width: 6),
                       Text(
                         st.duration,
@@ -2754,7 +2742,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         else
                           const Text('تست IP',
                               style:
-                                  TextStyle(fontSize: 11, color: Colors.grey)),
+                                  TextStyle(fontSize: 11, color: const Color(0xFF9CA3AF))),
                       ],
                     ),
                   ),
@@ -2777,7 +2765,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                   Expanded(
                     child: _speedItem(
                       Icons.arrow_downward_rounded,
-                      const Color(0xFF374151),
+                      const Color(0xFF4F46E5),
                       _fmtSpeed(st.downloadSpeed),
                       _fmtBytes(st.download),
                     ),
@@ -2790,7 +2778,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                   Expanded(
                     child: _speedItem(
                       Icons.arrow_upward_rounded,
-                      const Color(0xFF6B7280),
+                      const Color(0xFF4F46E5),
                       _fmtSpeed(st.uploadSpeed),
                       _fmtBytes(st.upload),
                     ),
@@ -2812,7 +2800,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
         style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w800,
-          color: Colors.grey,
+          color: const Color(0xFF9CA3AF),
           letterSpacing: 0.4,
         ),
       ),
@@ -2864,7 +2852,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
       subtitle: subtitle == null
           ? null
           : Text(subtitle,
-              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              style: const TextStyle(fontSize: 11, color: const Color(0xFF9CA3AF))),
       value: value,
       onChanged: (v) {
         onChanged(v);
@@ -2897,7 +2885,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
           : Text(subtitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              style: const TextStyle(fontSize: 11, color: const Color(0xFF9CA3AF))),
       trailing: trailing ?? const Icon(Icons.chevron_right_rounded, size: 20),
       onTap: onTap,
     );
@@ -3022,7 +3010,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                         width: 9,
                         height: 9,
                         decoration: const BoxDecoration(
-                          color: Color(0xFF4B5563),
+                          color: Color(0xFF4F46E5),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -3088,7 +3076,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   }
 
   Widget _usageBar(double ratio, String text, ColorScheme scheme) {
-    final color = ratio > 0.9 ? const Color(0xFF4B5563) : scheme.primary;
+    final color = ratio > 0.9 ? const Color(0xFF4F46E5) : scheme.primary;
     return Container(
       height: 22,
       clipBehavior: Clip.antiAlias,
@@ -3215,7 +3203,7 @@ bool get _isDark => Theme.of(context).brightness == Brightness.dark;
                                 ? '${servers.length} سرور'
                                 : '${servers.length} سرور  •  ${fmtAgo(sub.updatedAt)}',
                             style: const TextStyle(
-                                fontSize: 11, color: Colors.grey),
+                                fontSize: 11, color: const Color(0xFF9CA3AF)),
                           ),
                         ],
                       ),
@@ -3461,7 +3449,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               ),
             ),
             Text('${items.length}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                style: const TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF))),
           ],
         ),
       ));
@@ -3614,7 +3602,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     final connecting =
         pending != null || isConnecting || _connState == 'DISCONNECTING';
     final accent =
-        connected ? const Color(0xFF374151) : const Color(0xFF6B7280);
+        connected ? const Color(0xFF4F46E5) : const Color(0xFF4F46E5);
     final statusTitle = pending == false
         ? 'در حال قطع...'
         : connected
@@ -3730,7 +3718,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                         padding: const EdgeInsets.only(top: 6),
                         child: ActionChip(
                           avatar: const Icon(Icons.bedtime_rounded,
-                              size: 16, color: Color(0xFF6B7280)),
+                              size: 16, color: Color(0xFF4F46E5)),
                           label: Text(
                             'قطع خودکار تا ${_fmtDurationClock(_sleepRemaining)}',
                             style: const TextStyle(fontSize: 12),
@@ -3776,7 +3764,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.dns_outlined,
-                                size: 48, color: Colors.grey.shade400),
+                                size: 48, color: const Color(0xFF9CA3AF).shade400),
                             const SizedBox(height: 12),
                             const Text('هنوز سروری اضافه نشده است',
                                 style: TextStyle(
@@ -3786,7 +3774,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                               'لینک اشتراک یا کانفیگ خود را از کلیپ‌بورد یا دوربین اضافه کنید',
                               textAlign: TextAlign.center,
                               style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
+                                  TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF)),
                             ),
                             const SizedBox(height: 16),
                             FilledButton.icon(
@@ -3805,7 +3793,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                             padding: EdgeInsets.all(24),
                             child: Text(
                               'هیچ سروری با این فیلتر پیدا نشد',
-                              style: TextStyle(color: Colors.grey),
+                              style: TextStyle(color: const Color(0xFF9CA3AF)),
                             ),
                           ),
                         )
@@ -3829,7 +3817,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
       decoration: BoxDecoration(
         color: _cardSurface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF374151), width: 1.5),
+        border: Border.all(color: const Color(0xFF4F46E5), width: 1.5),
       ),
       child: Row(
         children: [
@@ -3866,11 +3854,9 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
   }
 
   Color _pingTone(int? ping) {
-    if (ping == null) return Colors.grey;
-    if (ping <= 0) return const Color(0xFF4B5563);
-    if (ping <= 200) return const Color(0xFF374151);
-    if (ping <= 400) return const Color(0xFF6B7280);
-    return const Color(0xFF4B5563);
+    if (ping == null) return const Color(0xFF9CA3AF);
+    if (ping <= 0) return const Color(0xFF9CA3AF);
+    return kAccent;
   }
 
   Widget _serverTile(ServerItem server) {
@@ -3887,8 +3873,8 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     final tone = _pingTone(ping);
     final selectedBg = _isDark
         ? Colors.white.withOpacity(0.08)
-        : const Color(0xFF4B5563).withOpacity(0.07);
-    final indicatorColor = _isDark ? Colors.white : const Color(0xFF4B5563);
+        : const Color(0xFF4F46E5).withOpacity(0.07);
+    final indicatorColor = _isDark ? Colors.white : const Color(0xFF4F46E5);
 
     return Material(
       color: isSelected ? selectedBg : Colors.transparent,
@@ -3949,7 +3935,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 icon: Icon(
                   isFav ? Icons.star_rounded : Icons.star_border_rounded,
                   size: 26,
-                  color: isFav ? const Color(0xFF6B7280) : Colors.grey,
+                  color: isFav ? const Color(0xFF4F46E5) : const Color(0xFF9CA3AF),
                 ),
                 onPressed: () => _toggleFavorite(server),
               ),
@@ -4029,9 +4015,9 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               ),
               ListTile(
                 leading:
-                    const Icon(Icons.delete_outline_rounded, color: const Color(0xFF4B5563)),
+                    const Icon(Icons.delete_outline_rounded, color: const Color(0xFF4F46E5)),
                 title:
-                    const Text('حذف سرور', style: TextStyle(color: const Color(0xFF4B5563))),
+                    const Text('حذف سرور', style: TextStyle(color: const Color(0xFF4F46E5))),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() {
@@ -4070,7 +4056,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _sheetHeader(Icons.link_rounded, const Color(0xFF6B7280),
+              _sheetHeader(Icons.link_rounded, const Color(0xFF4F46E5),
                   'آدرس تست پینگ'),
               const SizedBox(height: 14),
               TextField(
@@ -4208,7 +4194,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                   child: Text(
                     'برنامه‌های انتخاب‌شده مستقیم و بدون VPN وصل می‌شوند.',
                     style:
-                        TextStyle(fontSize: 12, color: Colors.grey, height: 1.6),
+                        TextStyle(fontSize: 12, color: const Color(0xFF9CA3AF), height: 1.6),
                   ),
                 ),
                 Expanded(
@@ -4251,11 +4237,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
   void _loadExtraSettings(SharedPreferences prefs) {
     hideDeadServers = prefs.getBool('x_hideDead') ?? false;
     serverSortMode = prefs.getInt('x_sortMode') ?? 0;
-    scheduleEnabled = prefs.getBool('x_schedOn') ?? false;
-    schedConnMin = prefs.getInt('x_schedConn') ?? 480;
-    schedDiscMin = prefs.getInt('x_schedDisc') ?? 1380;
     settingsPin = prefs.getString('x_pin') ?? '';
-    networkRuleEnabled = prefs.getBool('x_netRule') ?? false;
   }
 
   Future<void> _setExtra(String key, Object value) async {
@@ -4269,56 +4251,9 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
     }
   }
 
-  String _hm(int minutes) =>
-      '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-      '${(minutes % 60).toString().padLeft(2, '0')}';
-
-  Future<void> _pickSchedTime(bool connect) async {
-    final cur = connect ? schedConnMin : schedDiscMin;
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60),
-    );
-    if (t == null) return;
-    final mins = t.hour * 60 + t.minute;
-    _applySetting(() {
-      if (connect) {
-        schedConnMin = mins;
-      } else {
-        schedDiscMin = mins;
-      }
-    });
-    _setExtra(connect ? 'x_schedConn' : 'x_schedDisc', mins);
-  }
-
-  // هر ۳۰ ثانیه: زمان‌بندی و هشدار حجم اشتراک
-  void _startBgTick() {
-    _bgTimer?.cancel();
-    _bgTimer = Timer.periodic(const Duration(seconds: 30), (_) => _bgTick());
-    _startNetworkWatch();
-  }
-
-  Future<void> _bgTick() async {
+  // هشدار حجم اشتراک (بدون تایمر؛ فقط بعد از آپدیت اشتراک‌ها اجرا می‌شود)
+  void _checkTrafficAlerts() {
     if (!mounted) return;
-    final now = DateTime.now();
-    final minutes = now.hour * 60 + now.minute;
-    final dayKey = now.year * 10000 + now.month * 100 + now.day;
-
-    if (scheduleEnabled) {
-      if (minutes >= schedConnMin && _lastConnDay != dayKey) {
-        _lastConnDay = dayKey;
-        if (!isConnected && !isConnecting && selectedServer != null) {
-          await toggleVpn();
-        }
-      }
-      if (minutes >= schedDiscMin && _lastDiscDay != dayKey) {
-        _lastDiscDay = dayKey;
-        if (isConnected || isConnecting) {
-          await toggleVpn();
-        }
-      }
-    }
-
     for (final sub in subscriptions) {
       if (sub.totalBytes <= 0) continue;
       final ratio = sub.usedBytes / sub.totalBytes;
@@ -4332,56 +4267,6 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
       } else {
         _alertedSubs.remove(sub.id);
       }
-    }
-  }
-
-  void _startNetworkWatch() {
-    _netSub?.cancel();
-    _netSub = Connectivity().onConnectivityChanged.listen((results) async {
-      if (!networkRuleEnabled || !mounted) return;
-      final onWifi = results.contains(ConnectivityResult.wifi);
-      final onMobile = results.contains(ConnectivityResult.mobile);
-      if (onWifi && (isConnected || isConnecting)) {
-        await toggleVpn();
-      } else if (!onWifi &&
-          onMobile &&
-          !isConnected &&
-          !isConnecting &&
-          selectedServer != null) {
-        await toggleVpn();
-      }
-    });
-  }
-
-  Future<void> _runSpeedTest() async {
-    showSnack('در حال تست سرعت...');
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final sw = Stopwatch()..start();
-      final req = await client
-          .getUrl(Uri.parse(
-              'https://speed.cloudflare.com/__down?bytes=3000000'))
-          .timeout(const Duration(seconds: 15));
-      final res = await req.close().timeout(const Duration(seconds: 15));
-      var bytes = 0;
-      await for (final chunk in res) {
-        bytes += chunk.length;
-      }
-      sw.stop();
-      final secs = sw.elapsedMilliseconds / 1000;
-      final mbps = secs <= 0 ? 0.0 : (bytes * 8 / 1000000) / secs;
-      _addInboxMessage(
-        'نتیجه تست سرعت',
-        '${mbps.toStringAsFixed(1)} Mbps — '
-            '${(bytes / 1000000).toStringAsFixed(1)} MB در '
-            '${secs.toStringAsFixed(1)} ثانیه',
-      );
-      showSnack('سرعت: ${mbps.toStringAsFixed(1)} Mbps');
-    } catch (e) {
-      showSnack('تست سرعت ناموفق بود');
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -4551,7 +4436,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsSwitch(
               icon: Icons.auto_fix_high_rounded,
-              iconColor: const Color(0xFF374151),
+              iconColor: const Color(0xFF4F46E5),
               title: 'دور زدن محدودیت اپراتورها (TLS Fragment)',
               subtitle: 'تکه‌تکه کردن پکت‌های TLS برای همراه اول و ایرانسل',
               value: enableTlsFragment,
@@ -4567,11 +4452,11 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF374151).withOpacity(0.12),
+                    color: const Color(0xFF4F46E5).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.segment_rounded,
-                      color: Color(0xFF374151), size: 20),
+                      color: Color(0xFF4F46E5), size: 20),
                 ),
                 title: const Text('الگوی Fragment',
                     style:
@@ -4601,7 +4486,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               ),
             _settingsSwitch(
               icon: Icons.swap_horiz_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'پایش سلامت اتصال',
               subtitle:
                   'تشخیص افت کیفیت و پیشنهاد سرور جایگزین؛ تغییر سرور فقط با تأیید شما',
@@ -4621,7 +4506,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsSwitch(
               icon: Icons.alt_route_rounded,
-              iconColor: const Color(0xFF4B5563),
+              iconColor: const Color(0xFF4F46E5),
               title: 'تجمیع اتصال (Mux)',
               subtitle:
                   'ارسال چند درخواست روی یک اتصال (برای Reality خاموش باشد)',
@@ -4633,7 +4518,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.shield_outlined,
-              iconColor: const Color(0xFF4B5563),
+              iconColor: const Color(0xFF4F46E5),
               title: 'پذیرش TLS نامعتبر',
               subtitle: 'گواهی‌های ناامن یا خودامضا را بپذیر',
               value: allowInsecureDefault,
@@ -4644,7 +4529,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.language_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'پشتیبانی از IPv6',
               subtitle: 'فقط در صورت پشتیبانی اپراتور یا اینترنت شما',
               value: enableIPv6,
@@ -4653,26 +4538,15 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                 setLocal(() {});
               },
             ),
-            _settingsSwitch(
-              icon: Icons.bolt_rounded,
-              iconColor: const Color(0xFF6B7280),
-              title: 'بیدار نگه‌داشتن پردازنده (Keep CPU Awake)',
-              subtitle: 'جلوگیری از قطع و فریز شدن VPN هنگام خاموشی صفحه',
-              value: keepCpuAlive,
-              onChanged: (v) {
-                _applySetting(() => keepCpuAlive = v);
-                setLocal(() {});
-              },
-            ),
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6B7280).withOpacity(0.12),
+                  color: const Color(0xFF4F46E5).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.tune_rounded,
-                    color: Color(0xFF6B7280), size: 20),
+                    color: Color(0xFF4F46E5), size: 20),
               ),
               title: const Text('اندازه MTU پکت‌ها',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
@@ -4698,7 +4572,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsSwitch(
               icon: Icons.timeline_rounded,
-              iconColor: const Color(0xFF374151),
+              iconColor: const Color(0xFF4F46E5),
               title: 'اعمال مسیریابی روی پینگ',
               subtitle: 'قوانین بای‌پس ایران و LAN را در پینگ محاسبه کن',
               value: pingBypassRouting,
@@ -4709,7 +4583,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.filter_2_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'بهترین از دو پینگ (Best of Two)',
               subtitle: 'دو پینگ مجزا ارسال و نتیجه سریع‌تر ثبت می‌شود',
               value: pingBestOfTwo,
@@ -4722,11 +4596,11 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6B7280).withOpacity(0.12),
+                  color: const Color(0xFF4F46E5).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.timer_outlined,
-                    color: Color(0xFF6B7280), size: 20),
+                    color: Color(0xFF4F46E5), size: 20),
               ),
               title: const Text('مهلت پینگ (Timeout)',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
@@ -4747,7 +4621,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.link_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'آدرس تست تأخیر (Ping URL)',
               subtitle: pingTestUrl,
               trailing: const Icon(Icons.edit_rounded, size: 18),
@@ -4804,7 +4678,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.visibility_off_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'پنهان کردن سرورهای خراب',
               subtitle: 'سرورها حذف نمی‌شوند؛ فقط از لیست پنهان می‌شوند',
               trailing: Switch(
@@ -4831,58 +4705,8 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
               ),
             ),
             _settingsTile(
-              icon: Icons.schedule_rounded,
-              iconColor: const Color(0xFF6B7280),
-              title: 'اتصال و قطع زمان‌بندی‌شده',
-              subtitle: 'برنامه باید در حافظه باشد تا کار کند',
-              trailing: Switch(
-                value: scheduleEnabled,
-                onChanged: (v) {
-                  _applySetting(() => scheduleEnabled = v);
-                  _setExtra('x_schedOn', v);
-                },
-              ),
-            ),
-            if (scheduleEnabled) ...[
-              _settingsTile(
-                icon: Icons.login_rounded,
-                iconColor: const Color(0xFF6B7280),
-                title: 'ساعت اتصال',
-                trailing: Text(_hm(schedConnMin)),
-                onTap: () => _pickSchedTime(true),
-              ),
-              _settingsTile(
-                icon: Icons.logout_rounded,
-                iconColor: const Color(0xFF6B7280),
-                title: 'ساعت قطع',
-                trailing: Text(_hm(schedDiscMin)),
-                onTap: () => _pickSchedTime(false),
-              ),
-            ],
-            _settingsTile(
-              icon: Icons.wifi_tethering_rounded,
-              iconColor: const Color(0xFF6B7280),
-              title: 'قانون اتصال بر اساس شبکه',
-              subtitle: 'موبایل: اتصال خودکار | Wi-Fi: قطع خودکار',
-              trailing: Switch(
-                value: networkRuleEnabled,
-                onChanged: (v) {
-                  _applySetting(() => networkRuleEnabled = v);
-                  _setExtra('x_netRule', v);
-                  _startNetworkWatch();
-                },
-              ),
-            ),
-            _settingsTile(
-              icon: Icons.speed_rounded,
-              iconColor: const Color(0xFF6B7280),
-              title: 'تست سرعت',
-              subtitle: 'دانلود ۳ مگابایت؛ در حالت VPN از تونل رد می‌شود',
-              onTap: _runSpeedTest,
-            ),
-            _settingsTile(
               icon: Icons.lock_outline_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: settingsPin.isEmpty
                   ? 'قفل تنظیمات با رمز'
                   : 'تغییر یا حذف رمز تنظیمات',
@@ -4890,7 +4714,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.save_alt_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'ذخیره پشتیبان در فایل',
               subtitle: 'فایل JSON در پوشه‌ی Download',
               onTap: _exportBackupFile,
@@ -4933,14 +4757,14 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.apps_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'برنامه‌های خارج از VPN (Split Tunneling)',
               subtitle: '${bypassApps.length} برنامه مستقیم وصل می‌شوند',
               onTap: _openAppsPage,
             ),
             _settingsSwitch(
               icon: Icons.flag_circle_rounded,
-              iconColor: const Color(0xFF374151),
+              iconColor: const Color(0xFF4F46E5),
               title: 'بای‌پس ایران',
               subtitle: 'دامنه‌های .ir و رنج‌های روتینگ ایران مستقیم باز شوند',
               value: bypassIran,
@@ -4948,7 +4772,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.alt_route_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'قوانین روتینگ سفارشی (Happ / لیست IP)',
               subtitle: hasCustomRouting
                   ? '${customDirectIps.length} رنج IP • ${customDirectDomains.length} دامنه'
@@ -4957,7 +4781,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.block_rounded,
-              iconColor: const Color(0xFF4B5563),
+              iconColor: const Color(0xFF4F46E5),
               title: 'مسدودساز تبلیغات و ردیاب‌ها (AdBlock)',
               subtitle:
                   'حذف تبلیغات درون‌برنامه‌ای و سایت‌ها با هسته Xray و AdGuard',
@@ -4970,7 +4794,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.power_settings_new_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'اتصال خودکار پس از روشن شدن گوشی',
               subtitle: 'برقراری اتصال VPN بلافاصله بعد از ری‌استارت دستگاه',
               value: autoConnectOnBoot,
@@ -4978,7 +4802,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsSwitch(
               icon: Icons.router_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'بای‌پس شبکهٔ محلی (LAN)',
               subtitle: 'ارتباط مستقیم با مودم و دستگاه‌های داخل خانه',
               value: bypassLan,
@@ -5022,21 +4846,21 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.tune_rounded,
-              iconColor: const Color(0xFF4B5563),
+              iconColor: const Color(0xFF4F46E5),
               title: 'تنظیمات فوق پیشرفته موتور',
               subtitle: 'TLS Fragment، Auto-Failover، MTU و Mux',
               onTap: _openAdvancedSettings,
             ),
             _settingsTile(
               icon: Icons.file_upload_outlined,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'پشتیبان‌گیری از اطلاعات (Export)',
               subtitle: 'کپی کردن تمام سرورها و کانفیگ‌ها در کلیپ‌بورد',
               onTap: _exportBackup,
             ),
             _settingsTile(
               icon: Icons.file_download_outlined,
-              iconColor: const Color(0xFF374151),
+              iconColor: const Color(0xFF4F46E5),
               title: 'بازیابی اطلاعات (Import Backup)',
               subtitle: 'بازگردانی اطلاعات از متن کپی‌شده',
               onTap: _importBackup,
@@ -5046,7 +4870,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.system_update_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'بررسی بروزرسانی برنامه',
               subtitle: 'نسخهٔ فعال: $kAppVersion',
               trailing: isCheckingUpdate
@@ -5060,7 +4884,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.memory_rounded,
-              iconColor: const Color(0xFF374151),
+              iconColor: const Color(0xFF4F46E5),
               title: 'هستهٔ پردازشی Xray',
               subtitle: coreVersion,
               trailing: const Icon(Icons.sync_rounded, size: 20),
@@ -5068,7 +4892,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
             ),
             _settingsTile(
               icon: Icons.fingerprint_rounded,
-              iconColor: const Color(0xFF6B7280),
+              iconColor: const Color(0xFF4F46E5),
               title: 'شناسه اختصاصی دستگاه (HWID)',
               subtitle: hwid,
               trailing: const Icon(Icons.copy_rounded, size: 18),
@@ -5082,7 +4906,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
           _settingsCard([
             _settingsTile(
               icon: Icons.delete_sweep_rounded,
-              iconColor: const Color(0xFF4B5563),
+              iconColor: const Color(0xFF4F46E5),
               title: 'حذف همه سرورها و بازنشانی کامل',
               subtitle: 'حذف تمامی سرورها، اشتراک‌ها و ریست به حالت اول',
               onTap: () async {
@@ -5098,7 +4922,7 @@ Future<void> _ensureCountries(List<ServerItem> list) async {
                           child: const Text('انصراف')),
                       FilledButton(
                         style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF4B5563)),
+                            backgroundColor: const Color(0xFF4F46E5)),
                         onPressed: () => Navigator.pop(ctx, true),
                         child: const Text('حذف همه'),
                       ),
@@ -5149,11 +4973,11 @@ class _PowerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final outerCircle =
-        isDark ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB);
-    final innerCircle = isDark ? const Color(0xFF1F2937) : Colors.white;
+        isDark ? const Color(0xFF3730A3) : const Color(0xFFE5E7EB);
+    final innerCircle = isDark ? const Color(0xFF3730A3) : Colors.white;
     final powerIconColor = connected
-        ? const Color(0xFF374151)
-        : (isDark ? const Color(0xFF111827) : const Color(0xFF1F2937));
+        ? const Color(0xFF4F46E5)
+        : (isDark ? const Color(0xFF111827) : const Color(0xFF3730A3));
 
     return GestureDetector(
       onTap: onTap,
@@ -5171,16 +4995,16 @@ class _PowerButton extends StatelessWidget {
                 gradient: SweepGradient(
                   colors: connected
                       ? const [
-                          Color(0xFF374151),
-                          Color(0xFF6B7280),
-                          Color(0xFF374151),
-                          Color(0xFF374151)
+                          Color(0xFF4F46E5),
+                          Color(0xFF4F46E5),
+                          Color(0xFF4F46E5),
+                          Color(0xFF4F46E5)
                         ]
                       : const [
-                          Color(0xFF6B7280),
-                          Color(0xFF6B7280),
-                          Color(0xFF6B7280),
-                          Color(0xFF6B7280)
+                          Color(0xFF4F46E5),
+                          Color(0xFF4F46E5),
+                          Color(0xFF4F46E5),
+                          Color(0xFF4F46E5)
                         ],
                 ),
               ),
@@ -5211,8 +5035,8 @@ class _PowerButton extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(
                     color: (connected
-                            ? const Color(0xFF374151)
-                            : const Color(0xFF4B5563))
+                            ? const Color(0xFF4F46E5)
+                            : const Color(0xFF4F46E5))
                         .withOpacity(isDark ? 0.35 : 0.15),
                     blurRadius: 28,
                     spreadRadius: 2,
@@ -5280,8 +5104,8 @@ class _SpeedGraphPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
 
-    drawSeries(dl, const Color(0xFF374151));
-    drawSeries(ul, const Color(0xFF6B7280));
+    drawSeries(dl, const Color(0xFF4F46E5));
+    drawSeries(ul, const Color(0xFF4F46E5));
   }
 
   @override

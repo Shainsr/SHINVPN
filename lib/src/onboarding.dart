@@ -44,7 +44,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final last = _index == _pages.length - 1;
-    const accent = Color(0xFF6B7280);
+    const accent = Color(0xFF4F46E5);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -94,7 +94,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontSize: 14,
-                                color: Colors.grey,
+                                color: const Color(0xFF9CA3AF),
                                 height: 1.7,
                               ),
                             ),
@@ -115,7 +115,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         decoration: BoxDecoration(
                           color: i == _index
                               ? accent
-                              : Colors.grey.withOpacity(0.4),
+                              : const Color(0xFF9CA3AF).withOpacity(0.4),
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
