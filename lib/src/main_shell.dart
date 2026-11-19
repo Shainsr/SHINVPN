@@ -1186,7 +1186,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   // قوانین آماده‌ی v2rayNG (ایران/روسیه)؛ نیاز به فایل‌های geoip/geosite دارد
-  void _appendPresetRules(List<Map<String, dynamic>> rules, String proxyTag) {
+  void _appendPresetRules(List<dynamic> rules, String proxyTag) {
     for (final item in _presetRules) {
       if (item is! Map) continue;
       final rule = Map<String, dynamic>.from(item)..remove('remarks');
